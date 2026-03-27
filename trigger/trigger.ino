@@ -18,7 +18,7 @@ void setup()
 
 void loop() 
 {
-  bool pressed = digitalRead(BUTTON_PIN) == HIGH ? false : true;
+  bool pressed = digitalRead(BUTTON_PIN) == LOW;
 
   if (pressed) 
   {
