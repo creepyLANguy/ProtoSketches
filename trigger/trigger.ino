@@ -2,7 +2,6 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 
-
 const String deviceId = "proto_trigger_1";
 
 const int LED_PIN = 2;
@@ -33,11 +32,11 @@ enum SOUNDS {
   STARTUP,
   NO_WIFI,
   HTTP_POST_FAILED,
-  USER_CLICKED_POINT,
+  ADD_POINT,
+  SWITCH_TEAM,
 };
 
 void playSound(SOUNDS sound) {
-  return; // AL.
 
   switch (sound) {
   case STARTUP: {
@@ -50,11 +49,19 @@ void playSound(SOUNDS sound) {
   }
   case HTTP_POST_FAILED: {
     tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION);
+    delay(BUZZER_DURATION);
     tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION);
+    delay(BUZZER_DURATION);
     tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION);
     break;
   }
-  case USER_CLICKED_POINT: {
+  case ADD_POINT: {
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK, BUZZER_DURATION);
+    break;
+  }
+
+  case SWITCH_TEAM: {
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK, BUZZER_DURATION);
     tone(BUZZER_PIN, BUZZER_TONE_CLICK, BUZZER_DURATION);
     break;
   }
@@ -103,6 +110,8 @@ void sendEvent(String eventName) {
   if (!httpInitialized)
     initHttp();
 
+  // AL.
+  // TODO - revise the fields.
   String payload = "{ \"fields\": {";
   payload += "\"event\": {\"stringValue\": \"" + eventName + "\"},";
   payload += "\"deviceId\": {\"stringValue\": \"" + String(deviceId) + "\"},";
