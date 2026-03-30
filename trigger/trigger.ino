@@ -1,6 +1,7 @@
+#include <HTTPClient.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
-#include <HTTPClient.h>
+
 
 const String deviceId = "proto_trigger_1";
 
@@ -8,25 +9,25 @@ const int LED_PIN = 2;
 const int BUTTON_PIN = 3;
 const int BUZZER_PIN = 4;
 
-const int BUZZER_TONE_CLICK = 1500;//3000; //AL. TODO - uncomment
+const int BUZZER_TONE_CLICK = 1500; // 3000; //AL. TODO - uncomment
 const int BUZZER_DURATION = 200;
 
 const int TIMEOUT = 900;
 
-const char* ssid = "OwlBird";
-const char* password = "0823082006";
+const char *ssid = "";
+const char *password = "";
 const int WIFI_RETRY_INTERVAL = 5000;
 
 unsigned long lastWiFiAttempt = 0;
 
-const char* FIREBASE_PROJECTID = "punto-8888";
-const char* FIREBASE_APIKEY = "AIzaSyA6sA_c3yNUZvvo_dZanhydLn7jXl-55hU";
+const char *FIREBASE_PROJECTID = "";
+const char *FIREBASE_APIKEY = "";
 
 WiFiClientSecure client;
 HTTPClient http;
 bool httpInitialized = false;
 
-String currentTeam = "A"; //TODO - implement team switching;
+String currentTeam = "A"; // TODO - implement team switching;
 
 enum SOUNDS {
   STARTUP,
@@ -35,59 +36,50 @@ enum SOUNDS {
   USER_CLICKED_POINT,
 };
 
-void playSound(SOUNDS sound) 
-{
-  return; //AL.
+void playSound(SOUNDS sound) {
+  return; // AL.
 
-  switch (sound) 
-  {
-    STARTUP:
-    {
-      tone(BUZZER_PIN, BUZZER_TONE_CLICK, BUZZER_DURATION);
-      break;
-    }
-    NO_WIFI:
-    {
-      tone(BUZZER_PIN, BUZZER_TONE_CLICK/2, BUZZER_DURATION*6);
-      break;
-    }
-    HTTP_POST_FAILED:
-    {
-      tone(BUZZER_PIN, BUZZER_TONE_CLICK/2, BUZZER_DURATION);
-      tone(BUZZER_PIN, BUZZER_TONE_CLICK/2, BUZZER_DURATION);
-      tone(BUZZER_PIN, BUZZER_TONE_CLICK/2, BUZZER_DURATION);
-      break;
-    }  
-    USER_CLICKED_POINT:
-    {
-      tone(BUZZER_PIN, BUZZER_TONE_CLICK, BUZZER_DURATION);  
-      break;
-    }
-    default:
-      break;
+  switch (sound) {
+  case STARTUP: {
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK, BUZZER_DURATION);
+    break;
+  }
+  case NO_WIFI: {
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION * 6);
+    break;
+  }
+  case HTTP_POST_FAILED: {
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION);
+    break;
+  }
+  case USER_CLICKED_POINT: {
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK, BUZZER_DURATION);
+    break;
+  }
+  default:
+    break;
   }
 }
 
-void ensureWiFi() 
-{
-  if (WiFi.status() == WL_CONNECTED) 
-  {
+void ensureWiFi() {
+  if (WiFi.status() == WL_CONNECTED) {
     return;
-  } 
+  }
 
   playSound(NO_WIFI);
   unsigned long now = millis();
-  if (now - lastWiFiAttempt > WIFI_RETRY_INTERVAL) 
-  {
+  if (now - lastWiFiAttempt > WIFI_RETRY_INTERVAL) {
     lastWiFiAttempt = now;
     WiFi.disconnect();
-    WiFi.begin(ssid, password);    
+    WiFi.begin(ssid, password);
   }
 }
 
-void initHttp() 
-{
-  if (httpInitialized) return;
+void initHttp() {
+  if (httpInitialized)
+    return;
 
   client.setInsecure(); // skip cert validation for embedded
 
@@ -108,7 +100,8 @@ void sendEvent(String eventName) {
     playSound(NO_WIFI);
   }
 
-  if (!httpInitialized) initHttp();
+  if (!httpInitialized)
+    initHttp();
 
   String payload = "{ \"fields\": {";
   payload += "\"event\": {\"stringValue\": \"" + eventName + "\"},";
@@ -117,12 +110,10 @@ void sendEvent(String eventName) {
   payload += "\"ts\": {\"integerValue\": \"" + String(millis()) + "\"}";
   payload += "} }";
 
-  // retry once 
-  for (int i = 0; i < 2; i++) 
-  {
+  // retry once
+  for (int i = 0; i < 2; i++) {
     int code = http.POST(payload);
-    if (code > 0) 
-    {
+    if (code > 0) {
       return;
     }
 
@@ -134,28 +125,25 @@ void sendEvent(String eventName) {
   playSound(HTTP_POST_FAILED);
 }
 
-void setup() 
-{
+void setup() {
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
-  pinMode (BUZZER_PIN, OUTPUT);
+  pinMode(BUZZER_PIN, OUTPUT);
 
-  WiFi.begin(ssid, password);    
+  WiFi.begin(ssid, password);
 }
 
-void loop() 
-{
+void loop() {
   ensureWiFi();
 
   bool pressed = digitalRead(BUTTON_PIN) == LOW;
 
-  if (pressed) 
-  {
+  if (pressed) {
     digitalWrite(LED_PIN, HIGH);
     playSound(USER_CLICKED_POINT);
 
     sendEvent("POINT_TEAM_" + currentTeam);
-    
+
     delay(TIMEOUT);
     digitalWrite(LED_PIN, LOW);
   }
