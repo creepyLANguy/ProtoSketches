@@ -28,6 +28,13 @@ bool httpInitialized = false;
 
 String currentTeam = "A"; // TODO - implement team switching;
 
+enum EVENTS {
+  POINT_TEAM_A = "POINT_TEAM_A",
+  POINT_TEAM_B = "POINT_TEAM_B",
+  SWITCH_TEAM = "SWITCH_TEAM",
+  UNDO = "UNDO", // TODO - implement undo
+}
+
 enum SOUNDS {
   STARTUP,
   NO_WIFI,
@@ -62,6 +69,7 @@ void playSound(SOUNDS sound) {
 
   case SWITCH_TEAM: {
     tone(BUZZER_PIN, BUZZER_TONE_CLICK, BUZZER_DURATION);
+    delay(BUZZER_DURATION);
     tone(BUZZER_PIN, BUZZER_TONE_CLICK, BUZZER_DURATION);
     break;
   }
@@ -102,7 +110,7 @@ void initHttp() {
   httpInitialized = true;
 }
 
-void sendEvent(String eventName) {
+void sendEvent(EVENTS event) {
   if (WiFi.status() != WL_CONNECTED) {
     playSound(NO_WIFI);
   }
@@ -113,7 +121,8 @@ void sendEvent(String eventName) {
   // AL.
   // TODO - revise the fields.
   String payload = "{ \"fields\": {";
-  payload += "\"event\": {\"stringValue\": \"" + eventName + "\"},";
+  payload += "\"event\": {\"stringValue\": \"" + event +
+             "\"},"; // AL. //TODO - test if event resolves to its string value
   payload += "\"deviceId\": {\"stringValue\": \"" + String(deviceId) + "\"},";
   payload += "\"team\": {\"stringValue\": \"" + String(currentTeam) + "\"},";
   payload += "\"ts\": {\"integerValue\": \"" + String(millis()) + "\"}";
@@ -134,6 +143,16 @@ void sendEvent(String eventName) {
   playSound(HTTP_POST_FAILED);
 }
 
+void switchTeam() {
+  if (currentTeam == "A") {
+    currentTeam = "B";
+  } else {
+    currentTeam = "A";
+  }
+  sendEvent(SWITCH_TEAM);
+  playSound(SWITCH_TEAM);
+}
+
 void setup() {
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
@@ -151,7 +170,7 @@ void loop() {
     digitalWrite(LED_PIN, HIGH);
     playSound(USER_CLICKED_POINT);
 
-    sendEvent("POINT_TEAM_" + currentTeam);
+    sendEvent(currentTeam == "A" ? POINT_TEAM_A : POINT_TEAM_B);
 
     delay(TIMEOUT);
     digitalWrite(LED_PIN, LOW);
