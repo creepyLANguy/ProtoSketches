@@ -11,7 +11,11 @@ const int BUZZER_PIN = 4;
 const int BUZZER_TONE_CLICK = 1500; // 3000; //AL. TODO - uncomment
 const int BUZZER_DURATION = 200;
 
-const int TIMEOUT = 900;
+const int DEBOUNCE_TIME = 10;
+const int INPUT_TIMEOUT = 900;
+
+const int UNDO_HOLD_THRESHOLD = 2000;
+const int SWITCH_TEAM_HOLD_THRESHOLD = 5000;
 
 const char *ssid = "";
 const char *password = "";
@@ -28,12 +32,11 @@ bool httpInitialized = false;
 
 String currentTeam = "A"; // TODO - implement team switching;
 
-enum EVENTS {
-  POINT_TEAM_A = "POINT_TEAM_A",
-  POINT_TEAM_B = "POINT_TEAM_B",
-  SWITCH_TEAM = "SWITCH_TEAM",
-  UNDO = "UNDO", // TODO - implement undo
-}
+typedef const char *EVENT;
+const EVENT EVENT_POINT_TEAM_A = "POINT_TEAM_A";
+const EVENT EVENT_POINT_TEAM_B = "POINT_TEAM_B";
+const EVENT EVENT_SWITCH_TEAM = "SWITCH_TEAM";
+const EVENT EVENT_UNDO = "UNDO";
 
 enum SOUNDS {
   STARTUP,
@@ -41,6 +44,7 @@ enum SOUNDS {
   HTTP_POST_FAILED,
   ADD_POINT,
   SWITCH_TEAM,
+  UNDO,
 };
 
 void playSound(SOUNDS sound) {
@@ -71,6 +75,13 @@ void playSound(SOUNDS sound) {
     tone(BUZZER_PIN, BUZZER_TONE_CLICK, BUZZER_DURATION);
     delay(BUZZER_DURATION);
     tone(BUZZER_PIN, BUZZER_TONE_CLICK, BUZZER_DURATION);
+    break;
+  }
+
+  case UNDO: {
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 1.5, BUZZER_DURATION);
+    delay(BUZZER_DURATION);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION);
     break;
   }
   default:
@@ -110,7 +121,7 @@ void initHttp() {
   httpInitialized = true;
 }
 
-void sendEvent(EVENTS event) {
+void sendEvent(EVENT event) {
   if (WiFi.status() != WL_CONNECTED) {
     playSound(NO_WIFI);
   }
@@ -121,8 +132,7 @@ void sendEvent(EVENTS event) {
   // AL.
   // TODO - revise the fields.
   String payload = "{ \"fields\": {";
-  payload += "\"event\": {\"stringValue\": \"" + event +
-             "\"},"; // AL. //TODO - test if event resolves to its string value
+  payload += "\"event\": {\"stringValue\": \"" + String(event) + "\"},";
   payload += "\"deviceId\": {\"stringValue\": \"" + String(deviceId) + "\"},";
   payload += "\"team\": {\"stringValue\": \"" + String(currentTeam) + "\"},";
   payload += "\"ts\": {\"integerValue\": \"" + String(millis()) + "\"}";
@@ -143,15 +153,17 @@ void sendEvent(EVENTS event) {
   playSound(HTTP_POST_FAILED);
 }
 
-void switchTeam() {
-  if (currentTeam == "A") {
-    currentTeam = "B";
-  } else {
-    currentTeam = "A";
-  }
-  sendEvent(SWITCH_TEAM);
-  playSound(SWITCH_TEAM);
+void addPoint() {
+  sendEvent(currentTeam == "A" ? EVENT_POINT_TEAM_A : EVENT_POINT_TEAM_B);
+  delay(INPUT_TIMEOUT);
 }
+
+void switchTeam() {
+  currentTeam = currentTeam == "A" ? "B" : "A";
+  sendEvent(EVENT_SWITCH_TEAM);
+}
+
+void undo() { sendEvent(UNDO); }
 
 void setup() {
   pinMode(LED_PIN, OUTPUT);
@@ -164,15 +176,53 @@ void setup() {
 void loop() {
   ensureWiFi();
 
-  bool pressed = digitalRead(BUTTON_PIN) == LOW;
+  static bool lastButtonState = HIGH;
+  static unsigned long pressStartTime = 0;
+  static bool soundUndoPlayed = false;
+  static bool soundSwitchTeamPlayed = false;
+  static bool isPressing = false;
 
-  if (pressed) {
+  bool currentButtonState = digitalRead(BUTTON_PIN);
+
+  // Button pressed
+  if (lastButtonState == HIGH && currentButtonState == LOW) {
+    isPressing = true;
+    pressStartTime = millis();
+    soundUndoPlayed = false;
+    soundSwitchTeamPlayed = false;
     digitalWrite(LED_PIN, HIGH);
-    playSound(USER_CLICKED_POINT);
-
-    sendEvent(currentTeam == "A" ? POINT_TEAM_A : POINT_TEAM_B);
-
-    delay(TIMEOUT);
-    digitalWrite(LED_PIN, LOW);
+    playSound(ADD_POINT);
   }
+
+  // Button held
+  if (isPressing && currentButtonState == LOW) {
+    unsigned long duration = millis() - pressStartTime;
+
+    if (duration >= SWITCH_TEAM_HOLD_THRESHOLD && !soundSwitchTeamPlayed) {
+      playSound(SWITCH_TEAM);
+      soundSwitchTeamPlayed = true;
+    } else if (duration >= UNDO_HOLD_THRESHOLD && !soundUndoPlayed &&
+               !soundSwitchTeamPlayed) {
+      playSound(UNDO);
+      soundUndoPlayed = true;
+    }
+  }
+
+  // Button released
+  if (lastButtonState == LOW && currentButtonState == HIGH) {
+    digitalWrite(LED_PIN, LOW);
+    isPressing = false;
+    unsigned long duration = millis() - pressStartTime;
+
+    if (duration >= SWITCH_TEAM_HOLD_THRESHOLD) {
+      switchTeam();
+    } else if (duration >= UNDO_HOLD_THRESHOLD) {
+      undo();
+    } else {
+      addPoint();
+    }
+  }
+
+  lastButtonState = currentButtonState;
+  delay(DEBOUNCE_TIME);
 }
