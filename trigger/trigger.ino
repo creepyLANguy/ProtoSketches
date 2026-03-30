@@ -4,6 +4,7 @@
 
 const String deviceId = "proto_trigger_1";
 
+// TODO - make sure not using RX pins. Consider pins 5, 18, 19, 21, 22, 23
 const int LED_PIN = 2;
 const int BUTTON_PIN = 3;
 const int BUZZER_PIN = 4;
@@ -11,7 +12,7 @@ const int BUZZER_PIN = 4;
 const int BUZZER_TONE_CLICK = 1500; // 3000; //AL. TODO - uncomment
 const int BUZZER_DURATION = 200;
 
-const int DEBOUNCE_TIME = 10;
+const int DEBOUNCE_TIME = 50;
 const int INPUT_TIMEOUT = 900;
 
 const int UNDO_HOLD_THRESHOLD = 2000;
@@ -30,21 +31,24 @@ WiFiClientSecure client;
 HTTPClient http;
 bool httpInitialized = false;
 
-String currentTeam = "A"; // TODO - implement team switching;
+String payload = "";
+const int payloadBufferSize = 256;
+
+String currentTeam = "A"; // TODO - try and persist this to device.
 
 typedef const char *EVENT;
 const EVENT EVENT_POINT_TEAM_A = "POINT_TEAM_A";
 const EVENT EVENT_POINT_TEAM_B = "POINT_TEAM_B";
-const EVENT EVENT_SWITCH_TEAM = "SWITCH_TEAM";
 const EVENT EVENT_UNDO = "UNDO";
+const EVENT EVENT_SWITCH_TEAM = "SWITCH_TEAM";
 
 enum SOUNDS {
   STARTUP,
   NO_WIFI,
   HTTP_POST_FAILED,
   ADD_POINT,
-  SWITCH_TEAM,
   UNDO,
+  SWITCH_TEAM,
 };
 
 void playSound(SOUNDS sound) {
@@ -70,20 +74,16 @@ void playSound(SOUNDS sound) {
     tone(BUZZER_PIN, BUZZER_TONE_CLICK, BUZZER_DURATION);
     break;
   }
-
-  case SWITCH_TEAM: {
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK, BUZZER_DURATION);
-    delay(BUZZER_DURATION);
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK, BUZZER_DURATION);
-    break;
-  }
-
   case UNDO: {
     tone(BUZZER_PIN, BUZZER_TONE_CLICK / 1.5, BUZZER_DURATION);
-    delay(BUZZER_DURATION);
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION);
     break;
   }
+
+  case SWITCH_TEAM: {
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK * 2, BUZZER_DURATION);
+    break;
+  }
+
   default:
     break;
   }
@@ -124,6 +124,7 @@ void initHttp() {
 void sendEvent(EVENT event) {
   if (WiFi.status() != WL_CONNECTED) {
     playSound(NO_WIFI);
+    return;
   }
 
   if (!httpInitialized)
@@ -131,21 +132,20 @@ void sendEvent(EVENT event) {
 
   // AL.
   // TODO - revise the fields.
-  String payload = "{ \"fields\": {";
+  payload = "";
+  payload += "{ \"fields\": {";
   payload += "\"event\": {\"stringValue\": \"" + String(event) + "\"},";
-  payload += "\"deviceId\": {\"stringValue\": \"" + String(deviceId) + "\"},";
-  payload += "\"team\": {\"stringValue\": \"" + String(currentTeam) + "\"},";
-  payload += "\"ts\": {\"integerValue\": \"" + String(millis()) + "\"}";
+  payload += "\"deviceId\": {\"stringValue\": \"" + String(deviceId) + "\"}";
   payload += "} }";
 
   // retry once
   for (int i = 0; i < 2; i++) {
     int code = http.POST(payload);
-    if (code > 0) {
+    if (code >= 200 && code < 300) {
       return;
     }
 
-    http.end();
+    // http.end(); //AL. TODO - investigate .setReuse() and .end()
     httpInitialized = false;
     initHttp();
   }
@@ -163,7 +163,7 @@ void switchTeam() {
   sendEvent(EVENT_SWITCH_TEAM);
 }
 
-void undo() { sendEvent(UNDO); }
+void undo() { sendEvent(EVENT_UNDO); }
 
 void setup() {
   pinMode(LED_PIN, OUTPUT);
@@ -171,6 +171,8 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
 
   WiFi.begin(ssid, password);
+
+  payload.reserve(payloadBufferSize);
 }
 
 void loop() {
