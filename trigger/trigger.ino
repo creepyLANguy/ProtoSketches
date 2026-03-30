@@ -114,7 +114,7 @@ void playSound(SOUNDS sound) {
     delay(BUZZER_DURATION);
     tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION / 6);
     delay(BUZZER_DURATION);
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 3, BUZZER_DURATION / 6);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 1.5, BUZZER_DURATION / 6);
     break;
   }
 
