@@ -13,11 +13,10 @@ const int LED_PIN = 2;
 const int BUTTON_PIN = 3;
 const int BUZZER_PIN = 4;
 
-const int BUZZER_TONE_CLICK = 1500; // 3000; //AL. TODO - uncomment
+const int BUZZER_TONE_CLICK = 3000;
 const int BUZZER_DURATION = 200;
 
 const int DEBOUNCE_TIME = 50;
-const int INPUT_TIMEOUT = 900;
 const int POST_RETRY_INTERVAL = 250;
 
 const int UNDO_HOLD_THRESHOLD = 2000;
@@ -62,21 +61,35 @@ void playSound(SOUNDS sound) {
   
   switch (sound) {
   case STARTUP: {
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK, BUZZER_DURATION);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 4, BUZZER_DURATION / 4);
+    delay(BUZZER_DURATION);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 3, BUZZER_DURATION / 3);
+    delay(BUZZER_DURATION);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION / 2);
     break;
   }
 
   case NO_WIFI: {
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION * 10);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION / 3);        
+    delay(BUZZER_DURATION);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 3, BUZZER_DURATION / 3);
+    delay(BUZZER_DURATION);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 4, BUZZER_DURATION / 4);
+    delay(BUZZER_DURATION);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION / 3);        
+    delay(BUZZER_DURATION);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 3, BUZZER_DURATION / 3);
+    delay(BUZZER_DURATION);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 4, BUZZER_DURATION / 4);
     break;
   }
 
   case HTTP_POST_FAILED: {
     tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION);
-    delay(BUZZER_DURATION);
+    delay(BUZZER_DURATION * 2);
     tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION);
-    delay(BUZZER_DURATION);
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION);
+    delay(BUZZER_DURATION * 2);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION * 2);
     break;
   }
 
@@ -86,14 +99,22 @@ void playSound(SOUNDS sound) {
   }
 
   case UNDO: {
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION * 1.5);
-    delay(BUZZER_DURATION / 2);
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION * 1.5);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK * 0.75, BUZZER_DURATION * 1);
+    delay(BUZZER_DURATION);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK * 0.65, BUZZER_DURATION * 1.5);
     break;
   }
 
   case SWITCH_TEAM: {
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK * 2, BUZZER_DURATION * 2);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 3, BUZZER_DURATION / 6);
+    delay(BUZZER_DURATION);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION / 6);
+    delay(BUZZER_DURATION);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 1.8, BUZZER_DURATION / 6);
+    delay(BUZZER_DURATION);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION / 6);
+    delay(BUZZER_DURATION);
+    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 3, BUZZER_DURATION / 6);
     break;
   }
 
@@ -105,7 +126,10 @@ void playSound(SOUNDS sound) {
 void ensureWiFi() {
   bool isConnected = WiFi.status() == WL_CONNECTED;
 
-  if (!isConnected && wasConnected) {
+  if (isConnected && !wasConnected) {
+    playSound(STARTUP);
+  }
+  else if (!isConnected && wasConnected) {
     playSound(NO_WIFI);
   }
 
@@ -163,7 +187,6 @@ void sendEvent(EVENT event) {
 void addPoint() {
   playSound(ADD_POINT);
   sendEvent(currentTeam == 'A' ? EVENT_POINT_TEAM_A : EVENT_POINT_TEAM_B);
-  delay(INPUT_TIMEOUT);
 }
 
 void switchTeam() {
@@ -177,8 +200,6 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(BUZZER_PIN, OUTPUT);
-
-  playSound(STARTUP);
 
   WiFi.begin(ssid, password);
 
@@ -199,6 +220,14 @@ void loop() {
 
   // Button pressed
   if (lastButtonState == HIGH && currentButtonState == LOW) {
+    
+    if (WiFi.status() != WL_CONNECTED) {
+      playSound(NO_WIFI);
+      lastButtonState = LOW;
+      delay(DEBOUNCE_TIME);
+      return;
+    }
+
     isPressing = true;
     pressStartTime = millis();
     soundUndoPlayed = false;
