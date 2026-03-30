@@ -2,11 +2,11 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 
-const String deviceId = "proto_trigger_1";
-const String FIREBASE_PROJECTID = "punto-8888";
-const String FIREBASE_APIKEY = "AIzaSyA6sA_c3yNUZvvo_dZanhydLn7jXl-55hU";
-const char *ssid = "OwlBird";
-const char *password = "0823082006";
+const String deviceId = "";
+const String FIREBASE_PROJECTID = "";
+const String FIREBASE_APIKEY = "";
+const char *ssid = "";
+const char *password = "";
 
 // TODO - Consider cleaner pins such as 4, 5, 6, 7, 10
 const int LED_PIN = 2;
