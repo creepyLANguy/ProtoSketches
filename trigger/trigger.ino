@@ -2,11 +2,13 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 
-const String deviceId = "";
-const String FIREBASE_PROJECTID = "";
+const bool DEBUG = true;
+
+const String DEVICEID = "";
+const String FIREBASE_PROJECT = "";
 const String FIREBASE_APIKEY = "";
-const char *ssid = "";
-const char *password = "";
+const char* WIFI_NAME = "";
+const char* WIFI_PASSWORD = "";
 
 // TODO - Consider cleaner pins such as 4, 5, 6, 7, 10
 const int LED_PIN = 2;
@@ -28,39 +30,38 @@ static bool wasConnected = false;
 unsigned long lastWiFiAttempt = 0;
 
 WiFiClientSecure client;
-HTTPClient http;
+HTTPClient https;
 
 String payload = "";
 const int payloadBufferSize = 256;
 
-String FIRESTORE_URL = 
-  "https://firestore.googleapis.com/v1/projects/" + 
-  FIREBASE_PROJECTID + 
-  "/databases/(default)/documents/courts/events?key=" + 
-  FIREBASE_APIKEY;
+String REGION = "africa-south1";
+
+String POSTEVENT_ENDPOINT = 
+  "https://" + REGION + "-" + FIREBASE_PROJECT + ".cloudfunctions.net/postEvent";
 
 typedef const char *EVENT;
 const EVENT EVENT_POINT_TEAM_A = "POINT_TEAM_A";
 const EVENT EVENT_POINT_TEAM_B = "POINT_TEAM_B";
 const EVENT EVENT_UNDO = "UNDO";
-const EVENT EVENT_SWITCH_TEAM = "SWITCH_TEAM";
 
 // TODO - try and persist this to device.
 char currentTeam = 'A';
 
 enum SOUNDS {
-  STARTUP,
-  NO_WIFI,
-  HTTP_POST_FAILED,
-  ADD_POINT,
-  UNDO,
-  SWITCH_TEAM,
+  SND_CONNECTED,
+  SND_NO_WIFI,
+  SND_HTTP_POST_FAILED,
+
+  SND_ADD_POINT,
+  SND_UNDO,
+  SND_SWITCH_TEAM,
 };
 
 void playSound(SOUNDS sound) {
   
   switch (sound) {
-  case STARTUP: {
+  case SND_CONNECTED: {
     tone(BUZZER_PIN, BUZZER_TONE_CLICK / 4, BUZZER_DURATION / 4);
     delay(BUZZER_DURATION);
     tone(BUZZER_PIN, BUZZER_TONE_CLICK / 3, BUZZER_DURATION / 3);
@@ -69,7 +70,7 @@ void playSound(SOUNDS sound) {
     break;
   }
 
-  case NO_WIFI: {
+  case SND_NO_WIFI: {
     tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION / 3);        
     delay(BUZZER_DURATION);
     tone(BUZZER_PIN, BUZZER_TONE_CLICK / 3, BUZZER_DURATION / 3);
@@ -84,7 +85,7 @@ void playSound(SOUNDS sound) {
     break;
   }
 
-  case HTTP_POST_FAILED: {
+  case SND_HTTP_POST_FAILED: {
     tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION);
     delay(BUZZER_DURATION * 2);
     tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION);
@@ -93,19 +94,19 @@ void playSound(SOUNDS sound) {
     break;
   }
 
-  case ADD_POINT: {
+  case SND_ADD_POINT: {
     tone(BUZZER_PIN, BUZZER_TONE_CLICK, BUZZER_DURATION);
     break;
   }
 
-  case UNDO: {
+  case SND_UNDO: {
     tone(BUZZER_PIN, BUZZER_TONE_CLICK * 0.75, BUZZER_DURATION * 1);
     delay(BUZZER_DURATION);
     tone(BUZZER_PIN, BUZZER_TONE_CLICK * 0.65, BUZZER_DURATION * 1.5);
     break;
   }
 
-  case SWITCH_TEAM: {
+  case SND_SWITCH_TEAM: {
     tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION);
     delay(BUZZER_DURATION);
     tone(BUZZER_PIN, BUZZER_TONE_CLICK / 1.5, BUZZER_DURATION);
@@ -124,11 +125,11 @@ void playSound(SOUNDS sound) {
 void ensureWiFi() {
   bool isConnected = WiFi.status() == WL_CONNECTED;
 
-  if (isConnected && !wasConnected) {
-    playSound(STARTUP);
+  if (isConnected && !wasConnected) {    
+    playSound(SND_CONNECTED);
   }
   else if (!isConnected && wasConnected) {
-    playSound(NO_WIFI);
+    playSound(SND_NO_WIFI);
   }
 
   wasConnected = isConnected;
@@ -138,7 +139,8 @@ void ensureWiFi() {
   unsigned long now = millis();
   if (now - lastWiFiAttempt > WIFI_RETRY_INTERVAL) {
     lastWiFiAttempt = now;
-    WiFi.begin(ssid, password);
+    log("Attemptiong to connect to SSID : " + String(WIFI_NAME));
+    WiFi.begin(WIFI_NAME, WIFI_PASSWORD);
   }
 }
 
@@ -147,30 +149,24 @@ void sendEvent(EVENT event) {
     return;
   }
 
-  // AL.
-  // TODO - revise these fields to match website's minimal payload. 
   payload = "";
-  payload += "{ \"fields\": {";
-  
-  payload += "\"event\": {\"stringValue\": \"";
-  payload += event;
-  payload += "\"},";
-  
-  payload += "\"deviceId\": {\"stringValue\": \"";
-  payload += deviceId;
-  payload += "\"}";
-
-  payload += "} }";
+  payload += "{\"deviceId\":\"" + DEVICEID + "\",\"eventType\":\"" + event + "\"}";
 
   // retry once
   for (int i = 0; i < 2; i++) {
     client.setInsecure();
 
-    http.begin(client, FIRESTORE_URL);
-    http.addHeader("Content-Type", "application/json");
+    https.begin(client, POSTEVENT_ENDPOINT);
+    https.addHeader("Content-Type", "application/json");
 
-    int code = http.POST(payload);
-    http.end();
+    int code = https.POST(payload);
+
+    log("\nEndpoint: \n" + POSTEVENT_ENDPOINT);
+    log("\nPayload: \n" + payload);
+    log("\nResponse Code: \n" + String(code));
+    log("\nResponse Message: \n" + https.getString());
+
+    https.end();
 
     if (code >= 200 && code < 300) {
       return;
@@ -179,27 +175,37 @@ void sendEvent(EVENT event) {
     delay(POST_RETRY_INTERVAL);
   }
 
-  playSound(HTTP_POST_FAILED);
+  playSound(SND_HTTP_POST_FAILED);
 }
 
 void addPoint() {
-  playSound(ADD_POINT);
+  playSound(SND_ADD_POINT);
   sendEvent(currentTeam == 'A' ? EVENT_POINT_TEAM_A : EVENT_POINT_TEAM_B);
 }
 
 void switchTeam() {
   currentTeam = (currentTeam == 'A') ? 'B' : 'A';
-  sendEvent(EVENT_SWITCH_TEAM);
 }
 
 void undo() { sendEvent(EVENT_UNDO); }
 
+void log(String s) {
+  if (DEBUG) {
+    Serial.println(s);
+  }  
+}
+
 void setup() {
+  if (DEBUG) {
+    Serial.begin (115200);
+  }
+  log("Setting up...");
+
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(BUZZER_PIN, OUTPUT);
 
-  WiFi.begin(ssid, password);
+  WiFi.begin(WIFI_NAME, WIFI_PASSWORD);
 
   payload.reserve(payloadBufferSize);
 }
@@ -220,7 +226,7 @@ void loop() {
   if (lastButtonState == HIGH && currentButtonState == LOW) {
     
     if (WiFi.status() != WL_CONNECTED) {
-      playSound(NO_WIFI);
+      playSound(SND_NO_WIFI);
       lastButtonState = LOW;
       delay(DEBOUNCE_TIME);
       return;
@@ -238,11 +244,11 @@ void loop() {
     unsigned long duration = millis() - pressStartTime;
 
     if (duration >= SWITCH_TEAM_HOLD_THRESHOLD && !soundSwitchTeamPlayed) {
-      playSound(SWITCH_TEAM);
+      playSound(SND_SWITCH_TEAM);
       soundSwitchTeamPlayed = true;
     } else if (duration >= UNDO_HOLD_THRESHOLD && !soundUndoPlayed &&
                !soundSwitchTeamPlayed) {
-      playSound(UNDO);
+      playSound(SND_UNDO);
       soundUndoPlayed = true;
     }
   }
