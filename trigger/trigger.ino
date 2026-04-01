@@ -167,10 +167,12 @@ void sendEvent(EVENT event) {
 
     int code = https.POST(payload);
 
-    log("\nEndpoint: \n" + POSTEVENT_ENDPOINT);
-    log("\nPayload: \n" + payload);
-    log("\nResponse Code: \n" + String(code));
-    log("\nResponse Message: \n" + https.getString());
+    log(
+      "\nEndpoint: \n" + POSTEVENT_ENDPOINT + 
+      "\nPayload: \n" + payload + 
+      "\nResponse Code: \n" + String(code) + 
+      "\nResponse Message: \n" + https.getString()
+    );
 
     https.end();
 
