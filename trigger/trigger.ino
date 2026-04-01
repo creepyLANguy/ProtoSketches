@@ -125,10 +125,16 @@ void playSound(SOUNDS sound) {
 void ensureWiFi() {
   bool isConnected = WiFi.status() == WL_CONNECTED;
 
-  if (isConnected && !wasConnected) {    
+  if (WIFI_NAME == "") {
+    return;
+  }
+
+  if (isConnected && !wasConnected) {
+    log("Successfully Connected.");
     playSound(SND_CONNECTED);
   }
   else if (!isConnected && wasConnected) {
+    log("CONNECTION LOST.");
     playSound(SND_NO_WIFI);
   }
 
@@ -139,7 +145,7 @@ void ensureWiFi() {
   unsigned long now = millis();
   if (now - lastWiFiAttempt > WIFI_RETRY_INTERVAL) {
     lastWiFiAttempt = now;
-    log("Attemptiong to connect to SSID : " + String(WIFI_NAME));
+    log("Attempting to connect to SSID: " + String(WIFI_NAME));
     WiFi.begin(WIFI_NAME, WIFI_PASSWORD);
   }
 }
@@ -199,7 +205,7 @@ void setup() {
   if (DEBUG) {
     Serial.begin (115200);
   }
-  log("Setting up...");
+  log("Setting Up...");
 
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
@@ -208,6 +214,8 @@ void setup() {
   WiFi.begin(WIFI_NAME, WIFI_PASSWORD);
 
   payload.reserve(payloadBufferSize);
+
+  log("Setup Complete.");
 }
 
 void loop() {
