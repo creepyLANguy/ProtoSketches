@@ -1,14 +1,17 @@
 #include <HTTPClient.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include "esp_wifi.h"
 
 const bool DEBUG = true;
 const bool UNDERCLOCK = true;
 
-const String FIREBASE_PROJECT = "";
-const String FIREBASE_APIKEY = "";
-const char* WIFI_NAME = "";
-const char* WIFI_PASSWORD = "";
+//AL. //TODO - store these via captive portal on initial boot.
+const String DEVICEID = "proto_trigger_1";
+const String FIREBASE_PROJECT = "punto-8888";
+const String FIREBASE_APIKEY = "AIzaSyA6sA_c3yNUZvvo_dZanhydLn7jXl-55hU";
+const char* WIFI_NAME = "OwlBird";
+const char* WIFI_PASSWORD = "0823082006";
 
 const int LED_PIN = 2;
 const int BUTTON_PIN = 3;
@@ -17,9 +20,7 @@ const int BUZZER_PIN = 4;
 const int BUZZER_TONE_CLICK = 3000;
 const int BUZZER_DURATION = 200;
 
-const int DEBOUNCE_TIME = 50;
-const int POST_RETRY_INTERVAL = 250;
-
+const int DEBOUNCE_TIME = 1000;
 const int UNDO_HOLD_THRESHOLD = 2000;
 const int SWITCH_TEAM_HOLD_THRESHOLD = 5000;
 
@@ -30,9 +31,10 @@ unsigned long lastWiFiAttempt = 0;
 
 WiFiClientSecure client;
 HTTPClient https;
-
-String payload = "";
-const int payloadBufferSize = 256;
+const uint16_t HTTPS_CONNECT_TIMEOUT = 2000;
+const uint16_t HTTPS_RESPONSE_TIMEOUT = 3000;
+const int POST_RETRY_INTERVAL = 250;
+const int PAYLOAD_BUFFER_SIZE = 256;
 
 String REGION = "africa-south1";
 
@@ -47,6 +49,8 @@ const EVENT EVENT_UNDO = "UNDO";
 //AL. //TODO - persist this to device.
 char currentTeam = 'A';
 
+static unsigned long lastProcessedPressTime = 0;
+
 enum SOUNDS {
   SND_CONNECTED,
   SND_NO_WIFI,
@@ -58,7 +62,7 @@ enum SOUNDS {
 };
 
 void playSound(SOUNDS sound) {
-  
+  return;
   switch (sound) {
   case SND_CONNECTED: {
     tone(BUZZER_PIN, BUZZER_TONE_CLICK / 4, BUZZER_DURATION / 4);
@@ -123,6 +127,12 @@ void playSound(SOUNDS sound) {
 
 void ensureWiFi() {
   bool isConnected = WiFi.status() == WL_CONNECTED;
+  bool failed = WiFi.status() == WL_CONNECT_FAILED;
+
+  //Prolly still trying to connect atm...
+  if (!isConnected && !failed) {
+    return;
+  }
 
   if (WIFI_NAME == "") {
     return;
@@ -131,10 +141,16 @@ void ensureWiFi() {
   if (isConnected && !wasConnected) {
     log("Successfully Connected.");
     playSound(SND_CONNECTED);
+
+    log("Enabling WiFi modem sleep");
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
   }
   else if (!isConnected && wasConnected) {
     log("CONNECTION LOST.");
     playSound(SND_NO_WIFI);
+
+    log("Disabling WiFi modem sleep");
+    esp_wifi_set_ps(WIFI_PS_NONE);
   }
 
   wasConnected = isConnected;
@@ -154,21 +170,31 @@ void sendEvent(EVENT event) {
     return;
   }
 
-  payload = "";
-  payload += "{\"deviceId\":\"" + DEVICEID + "\",\"eventType\":\"" + event + "\"}";
+  char payload[PAYLOAD_BUFFER_SIZE];
+  snprintf(
+    payload, sizeof(payload), 
+    "{\"deviceId\":\"%s\",\"eventType\":\"%s\"}", 
+    DEVICEID.c_str(), event
+    );
 
   // retry once
   for (int i = 0; i < 2; i++) {
     client.setInsecure();
 
     https.begin(client, POSTEVENT_ENDPOINT);
+    https.setConnectTimeout(HTTPS_CONNECT_TIMEOUT);
+    https.setTimeout(HTTPS_RESPONSE_TIMEOUT);
     https.addHeader("Content-Type", "application/json");
+
+    log(
+      "\nEvent: \n" + String(event) +
+      "\nEndpoint: \n" + POSTEVENT_ENDPOINT + 
+      "\nPayload: \n" + payload
+    );
 
     int code = https.POST(payload);
 
-    log(
-      "\nEndpoint: \n" + POSTEVENT_ENDPOINT + 
-      "\nPayload: \n" + payload + 
+    log(    
       "\nResponse Code: \n" + String(code) + 
       "\nResponse Message: \n" + https.getString()
     );
@@ -210,15 +236,13 @@ void setup() {
   if (DEBUG) {
     Serial.begin (115200);
   }
-  log("Setting Up...");
+  log("\n\nSetting Up...");
 
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(BUZZER_PIN, OUTPUT);
 
   WiFi.begin(WIFI_NAME, WIFI_PASSWORD);
-
-  payload.reserve(payloadBufferSize);
 
   log("Setup Complete.");
 }
@@ -237,16 +261,22 @@ void loop() {
 
   // Button pressed
   if (lastButtonState == HIGH && currentButtonState == LOW) {
-    
-    if (WiFi.status() != WL_CONNECTED) {
-      playSound(SND_NO_WIFI);
-      lastButtonState = LOW;
-      delay(DEBOUNCE_TIME);
+
+    unsigned long now = millis();
+
+    if (now - lastProcessedPressTime < DEBOUNCE_TIME) {
+      lastButtonState = currentButtonState;
       return;
     }
 
+    if (WiFi.status() != WL_CONNECTED) {
+      playSound(SND_NO_WIFI);
+      lastButtonState = LOW;
+      return;
+    }
+    
     isPressing = true;
-    pressStartTime = millis();
+    pressStartTime = now;
     soundUndoPlayed = false;
     soundSwitchTeamPlayed = false;
     digitalWrite(LED_PIN, HIGH);
@@ -264,13 +294,15 @@ void loop() {
       playSound(SND_UNDO);
       soundUndoPlayed = true;
     }
-  }
+  } 
 
   // Button released
   if (lastButtonState == LOW && currentButtonState == HIGH) {
     digitalWrite(LED_PIN, LOW);
     isPressing = false;
-    unsigned long duration = millis() - pressStartTime;
+    unsigned long releasedTime = millis();
+    lastProcessedPressTime = releasedTime;
+    unsigned long duration = releasedTime - pressStartTime;
 
     if (duration >= SWITCH_TEAM_HOLD_THRESHOLD) {
       switchTeam();
@@ -282,5 +314,4 @@ void loop() {
   }
 
   lastButtonState = currentButtonState;
-  delay(DEBOUNCE_TIME);
 }
