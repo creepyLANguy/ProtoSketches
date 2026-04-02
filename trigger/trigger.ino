@@ -3,14 +3,13 @@
 #include <WiFiClientSecure.h>
 
 const bool DEBUG = true;
+const bool UNDERCLOCK = true;
 
-const String DEVICEID = "";
 const String FIREBASE_PROJECT = "";
 const String FIREBASE_APIKEY = "";
 const char* WIFI_NAME = "";
 const char* WIFI_PASSWORD = "";
 
-// TODO - Consider cleaner pins such as 4, 5, 6, 7, 10
 const int LED_PIN = 2;
 const int BUTTON_PIN = 3;
 const int BUZZER_PIN = 4;
@@ -45,7 +44,7 @@ const EVENT EVENT_POINT_TEAM_A = "POINT_TEAM_A";
 const EVENT EVENT_POINT_TEAM_B = "POINT_TEAM_B";
 const EVENT EVENT_UNDO = "UNDO";
 
-// TODO - try and persist this to device.
+//AL. //TODO - persist this to device.
 char currentTeam = 'A';
 
 enum SOUNDS {
@@ -204,6 +203,10 @@ void log(String s) {
 }
 
 void setup() {
+  if (UNDERCLOCK) {
+    setCpuFrequencyMhz(80);
+  }
+  
   if (DEBUG) {
     Serial.begin (115200);
   }
