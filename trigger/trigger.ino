@@ -7,11 +7,7 @@ const bool DEBUG = true;
 const bool UNDERCLOCK = true;
 
 //AL. //TODO - store these via captive portal on initial boot.
-const String DEVICEID = "proto_trigger_1";
-const String FIREBASE_PROJECT = "punto-8888";
-const String FIREBASE_APIKEY = "AIzaSyA6sA_c3yNUZvvo_dZanhydLn7jXl-55hU";
-const char* WIFI_NAME = "OwlBird";
-const char* WIFI_PASSWORD = "0823082006";
+
 
 const int LED_PIN = 2;
 const int BUTTON_PIN = 3;
