@@ -6,8 +6,12 @@
 const bool DEBUG = true;
 const bool UNDERCLOCK = true;
 
-//AL. //TODO - store these via captive portal on initial boot.
-
+// CONFIG
+const String DEVICEID = "proto_trigger_1";
+const String FIREBASE_PROJECT = "punto-8888";
+const String FIREBASE_APIKEY = "AIzaSyA6sA_c3yNUZvvo_dZanhydLn7jXl-55hU";
+const char* WIFI_NAME = "OwlBird";
+const char* WIFI_PASSWORD = "0823082006";
 
 const int LED_PIN = 2;
 const int BUTTON_PIN = 3;
@@ -16,7 +20,9 @@ const int BUZZER_PIN = 4;
 const int BUZZER_TONE_CLICK = 3000;
 const int BUZZER_DURATION = 200;
 
-const int DEBOUNCE_TIME = 1000;
+const int DEBOUNCE_TIME = 50;
+const int PRESS_COOLDOWN = 500;
+
 const int UNDO_HOLD_THRESHOLD = 2000;
 const int SWITCH_TEAM_HOLD_THRESHOLD = 5000;
 
@@ -27,6 +33,7 @@ unsigned long lastWiFiAttempt = 0;
 
 WiFiClientSecure client;
 HTTPClient https;
+
 const uint16_t HTTPS_CONNECT_TIMEOUT = 2000;
 const uint16_t HTTPS_RESPONSE_TIMEOUT = 3000;
 const int POST_RETRY_INTERVAL = 250;
@@ -34,7 +41,7 @@ const int PAYLOAD_BUFFER_SIZE = 256;
 
 String REGION = "africa-south1";
 
-String POSTEVENT_ENDPOINT = 
+String POSTEVENT_ENDPOINT =
   "https://" + REGION + "-" + FIREBASE_PROJECT + ".cloudfunctions.net/postEvent";
 
 typedef const char *EVENT;
@@ -42,107 +49,141 @@ const EVENT EVENT_POINT_TEAM_A = "POINT_TEAM_A";
 const EVENT EVENT_POINT_TEAM_B = "POINT_TEAM_B";
 const EVENT EVENT_UNDO = "UNDO";
 
-//AL. //TODO - persist this to device.
 char currentTeam = 'A';
-
-static unsigned long lastProcessedPressTime = 0;
 
 enum SOUNDS {
   SND_CONNECTED,
   SND_NO_WIFI,
   SND_HTTP_POST_FAILED,
-
   SND_ADD_POINT,
   SND_UNDO,
   SND_SWITCH_TEAM,
 };
 
-void playSound(SOUNDS sound) {
-  return;
-  switch (sound) {
-  case SND_CONNECTED: {
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 4, BUZZER_DURATION / 4);
-    delay(BUZZER_DURATION);
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 3, BUZZER_DURATION / 3);
-    delay(BUZZER_DURATION);
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION / 2);
-    break;
-  }
+// ==========================
+// 🔊 NON-BLOCKING SOUND ENGINE
+// ==========================
 
-  case SND_NO_WIFI: {
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION / 3);        
-    delay(BUZZER_DURATION);
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 3, BUZZER_DURATION / 3);
-    delay(BUZZER_DURATION);
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 4, BUZZER_DURATION / 4);
-    delay(BUZZER_DURATION);
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION / 3);        
-    delay(BUZZER_DURATION);
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 3, BUZZER_DURATION / 3);
-    delay(BUZZER_DURATION);
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 4, BUZZER_DURATION / 4);
-    break;
-  }
+struct SoundStep {
+  double freq;
+  double duration;
+  double pauseAfter;
+};
 
-  case SND_HTTP_POST_FAILED: {
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION);
-    delay(BUZZER_DURATION * 2);
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION);
-    delay(BUZZER_DURATION * 2);
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION * 2);
-    break;
-  }
+#define MAX_STEPS 10
 
-  case SND_ADD_POINT: {
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK, BUZZER_DURATION);
-    break;
-  }
+struct Sound {
+  SoundStep steps[MAX_STEPS];
+  int length;
+};
 
-  case SND_UNDO: {
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK * 0.75, BUZZER_DURATION * 1);
-    delay(BUZZER_DURATION);
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK * 0.65, BUZZER_DURATION * 1.5);
-    break;
-  }
+Sound currentSound;
+int soundIndex = 0;
+unsigned long soundStart = 0;
+bool isPlayingSound = false;
 
-  case SND_SWITCH_TEAM: {
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION);
-    delay(BUZZER_DURATION);
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 1.5, BUZZER_DURATION);
-    delay(BUZZER_DURATION);
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 2, BUZZER_DURATION);
-    delay(BUZZER_DURATION);
-    tone(BUZZER_PIN, BUZZER_TONE_CLICK / 1.5, BUZZER_DURATION);
-    break;
-  }
+void startSound(Sound sound) {
+  currentSound = sound;
+  soundIndex = 0;
+  soundStart = millis();
+  isPlayingSound = true;
 
-  default:
-    break;
+  tone(BUZZER_PIN, (int)sound.steps[0].freq, (int)sound.steps[0].duration);
+}
+
+void updateSound() {
+  if (!isPlayingSound) return;
+
+  unsigned long now = millis();
+  SoundStep step = currentSound.steps[soundIndex];
+
+  if (now - soundStart >= (step.duration + step.pauseAfter)) {
+    soundIndex++;
+
+    if (soundIndex >= currentSound.length) {
+      isPlayingSound = false;
+      noTone(BUZZER_PIN);
+      return;
+    }
+
+    soundStart = now;
+    SoundStep next = currentSound.steps[soundIndex];
+    tone(BUZZER_PIN, (int)next.freq, (int)next.duration);
   }
 }
+
+// ==========================
+// 🔊 SOUND DEFINITIONS
+// ==========================
+
+Sound SND_ADD_POINT_OBJ = {{
+  {BUZZER_TONE_CLICK, BUZZER_DURATION, 0}
+}, 1};
+
+Sound SND_UNDO_OBJ = {{
+  {BUZZER_TONE_CLICK * 0.75, BUZZER_DURATION, 50},
+  {BUZZER_TONE_CLICK * 0.65, BUZZER_DURATION * 1.5, 0}
+}, 2};
+
+Sound SND_SWITCH_TEAM_OBJ = {{
+  {BUZZER_TONE_CLICK / 2, BUZZER_DURATION, 50},
+  {BUZZER_TONE_CLICK / 1.5, BUZZER_DURATION / 2, 50},
+  {BUZZER_TONE_CLICK / 2, BUZZER_DURATION, 50},
+  {BUZZER_TONE_CLICK / 1.5, BUZZER_DURATION / 2, 0}
+}, 4};
+
+Sound SND_CONNECTED_OBJ = {{
+  {BUZZER_TONE_CLICK / 4, 80, 50},
+  {BUZZER_TONE_CLICK / 3, 100, 50},
+  {BUZZER_TONE_CLICK / 2, 120, 0}
+}, 3};
+
+Sound SND_NO_WIFI_OBJ = {{
+  {BUZZER_TONE_CLICK / 2, 80, 50},
+  {BUZZER_TONE_CLICK / 3, 80, 50},
+  {BUZZER_TONE_CLICK / 4, 80, 50},
+  {BUZZER_TONE_CLICK / 2, 80, 50},
+  {BUZZER_TONE_CLICK / 3, 80, 50},
+  {BUZZER_TONE_CLICK / 4, 80, 0}
+}, 6};
+
+Sound SND_HTTP_FAIL_OBJ = {{
+  {BUZZER_TONE_CLICK / 2, 200, 200},
+  {BUZZER_TONE_CLICK / 2, 200, 200},
+  {BUZZER_TONE_CLICK / 2, 400, 0}
+}, 3};
+
+void playSound(SOUNDS sound) {
+  switch (sound) {
+    case SND_CONNECTED: startSound(SND_CONNECTED_OBJ); break;
+    case SND_NO_WIFI: startSound(SND_NO_WIFI_OBJ); break;
+    case SND_HTTP_POST_FAILED: startSound(SND_HTTP_FAIL_OBJ); break;
+    case SND_ADD_POINT: startSound(SND_ADD_POINT_OBJ); break;
+    case SND_UNDO: startSound(SND_UNDO_OBJ); break;
+    case SND_SWITCH_TEAM: startSound(SND_SWITCH_TEAM_OBJ); break;
+  }
+}
+
+// ==========================
+// WIFI + API
+// ==========================
 
 void ensureWiFi() {
   bool isConnected = WiFi.status() == WL_CONNECTED;
   bool failed = WiFi.status() == WL_CONNECT_FAILED;
 
-  //Prolly still trying to connect atm...
-  if (!isConnected && !failed) {
-    return;
-  }
-
-  if (WIFI_NAME == "") {
-    return;
-  }
+  if (!isConnected && !failed) return;
+  if (WIFI_NAME == "") return;
 
   if (isConnected && !wasConnected) {
-    log("Successfully Connected.");
+    log("WiFi Connected");
     playSound(SND_CONNECTED);
-
+    
     log("Enabling WiFi modem sleep");
     esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
   }
   else if (!isConnected && wasConnected) {
-    log("CONNECTION LOST.");
+    log("Lost connection");
     playSound(SND_NO_WIFI);
 
     log("Disabling WiFi modem sleep");
@@ -162,24 +203,17 @@ void ensureWiFi() {
 }
 
 void sendEvent(EVENT event) {
-  if (WiFi.status() != WL_CONNECTED) {
-    return;
-  }
+  if (WiFi.status() != WL_CONNECTED) return;
 
   char payload[PAYLOAD_BUFFER_SIZE];
-  snprintf(
-    payload, sizeof(payload), 
-    "{\"deviceId\":\"%s\",\"eventType\":\"%s\"}", 
-    DEVICEID.c_str(), event
-    );
+  snprintf(payload, sizeof(payload),
+    "{\"deviceId\":\"%s\",\"eventType\":\"%s\"}",
+    DEVICEID.c_str(), event);
 
-  // retry once
+  //retries once
   for (int i = 0; i < 2; i++) {
     client.setInsecure();
-
     https.begin(client, POSTEVENT_ENDPOINT);
-    https.setConnectTimeout(HTTPS_CONNECT_TIMEOUT);
-    https.setTimeout(HTTPS_RESPONSE_TIMEOUT);
     https.addHeader("Content-Type", "application/json");
 
     log(
@@ -190,22 +224,24 @@ void sendEvent(EVENT event) {
 
     int code = https.POST(payload);
 
-    log(    
+    log(
       "\nResponse Code: \n" + String(code) + 
       "\nResponse Message: \n" + https.getString()
     );
 
     https.end();
 
-    if (code >= 200 && code < 300) {
-      return;
-    }
+    if (code >= 200 && code < 300) return;
 
     delay(POST_RETRY_INTERVAL);
   }
 
   playSound(SND_HTTP_POST_FAILED);
 }
+
+// ==========================
+// ACTIONS
+// ==========================
 
 void addPoint() {
   playSound(SND_ADD_POINT);
@@ -216,23 +252,24 @@ void switchTeam() {
   currentTeam = (currentTeam == 'A') ? 'B' : 'A';
 }
 
-void undo() { sendEvent(EVENT_UNDO); }
-
-void log(String s) {
-  if (DEBUG) {
-    Serial.println(s);
-  }  
+void undo() {
+  sendEvent(EVENT_UNDO);
 }
 
+void log(String s) {
+  if (DEBUG) Serial.println(s);
+}
+
+// ==========================
+// SETUP
+// ==========================
+
 void setup() {
-  if (UNDERCLOCK) {
-    setCpuFrequencyMhz(80);
-  }
-  
-  if (DEBUG) {
-    Serial.begin (115200);
-  }
   log("\n\nSetting Up...");
+
+  if (UNDERCLOCK) setCpuFrequencyMhz(80);
+
+  if (DEBUG) Serial.begin(115200);
 
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUTTON_PIN, INPUT_PULLUP);
@@ -243,71 +280,92 @@ void setup() {
   log("Setup Complete.");
 }
 
+// ==========================
+// LOOP (FIXED BUTTON LOGIC)
+// ==========================
+
 void loop() {
   ensureWiFi();
+  updateSound();
 
-  static bool lastButtonState = HIGH;
+  static bool lastReading = HIGH;
+  static bool stableState = HIGH;
+  static unsigned long lastDebounceTime = 0;
+
   static unsigned long pressStartTime = 0;
+  static unsigned long lastPressTime = 0;
 
-  static bool soundUndoPlayed = false;
-  static bool soundSwitchTeamPlayed = false;
   static bool isPressing = false;
+  static bool soundUndoPlayed = false;
+  static bool soundSwitchPlayed = false;
 
-  bool currentButtonState = digitalRead(BUTTON_PIN);
+  bool reading = digitalRead(BUTTON_PIN);
+  unsigned long now = millis();
 
-  // Button pressed
-  if (lastButtonState == HIGH && currentButtonState == LOW) {
-
-    unsigned long now = millis();
-
-    if (now - lastProcessedPressTime < DEBOUNCE_TIME) {
-      lastButtonState = currentButtonState;
-      return;
-    }
-
-    if (WiFi.status() != WL_CONNECTED) {
-      playSound(SND_NO_WIFI);
-      lastButtonState = LOW;
-      return;
-    }
-    
-    isPressing = true;
-    pressStartTime = now;
-    soundUndoPlayed = false;
-    soundSwitchTeamPlayed = false;
-    digitalWrite(LED_PIN, HIGH);
+  if (reading != lastReading) {
+    lastDebounceTime = now;
   }
 
-  // Button held
-  if (isPressing && currentButtonState == LOW) {
-    unsigned long duration = millis() - pressStartTime;
+  if ((now - lastDebounceTime) > DEBOUNCE_TIME) {
 
-    if (duration >= SWITCH_TEAM_HOLD_THRESHOLD && !soundSwitchTeamPlayed) {
+    if (reading != stableState) {
+      stableState = reading;
+
+      // PRESS
+      if (stableState == LOW) {
+
+        if (now - lastPressTime < PRESS_COOLDOWN) return;
+
+        if (WiFi.status() != WL_CONNECTED) {
+          playSound(SND_NO_WIFI);
+          return;
+        }
+
+        isPressing = true;
+        pressStartTime = now;
+        soundUndoPlayed = false;
+        soundSwitchPlayed = false;
+
+        digitalWrite(LED_PIN, HIGH);
+      }
+
+      // RELEASE
+      else {
+        digitalWrite(LED_PIN, LOW);
+
+        if (!isPressing) return;
+
+        isPressing = false;
+        lastPressTime = now;
+
+        unsigned long duration = now - pressStartTime;
+
+        if (duration >= SWITCH_TEAM_HOLD_THRESHOLD) {
+          switchTeam();
+        }
+        else if (duration >= UNDO_HOLD_THRESHOLD) {
+          undo();
+        }
+        else {
+          addPoint();
+        }
+      }
+    }
+  }
+
+  lastReading = reading;
+
+  // HOLD FEEDBACK
+  if (isPressing && stableState == LOW) {
+    unsigned long duration = now - pressStartTime;
+
+    if (duration >= SWITCH_TEAM_HOLD_THRESHOLD && !soundSwitchPlayed) {
       playSound(SND_SWITCH_TEAM);
-      soundSwitchTeamPlayed = true;
-    } else if (duration >= UNDO_HOLD_THRESHOLD && !soundUndoPlayed &&
-               !soundSwitchTeamPlayed) {
+      soundSwitchPlayed = true;
+    }
+    else if (duration >= UNDO_HOLD_THRESHOLD && !soundUndoPlayed && !soundSwitchPlayed) {
       playSound(SND_UNDO);
       soundUndoPlayed = true;
     }
-  } 
-
-  // Button released
-  if (lastButtonState == LOW && currentButtonState == HIGH) {
-    digitalWrite(LED_PIN, LOW);
-    isPressing = false;
-    unsigned long releasedTime = millis();
-    lastProcessedPressTime = releasedTime;
-    unsigned long duration = releasedTime - pressStartTime;
-
-    if (duration >= SWITCH_TEAM_HOLD_THRESHOLD) {
-      switchTeam();
-    } else if (duration >= UNDO_HOLD_THRESHOLD) {
-      undo();
-    } else {
-      addPoint();
-    }
   }
-
-  lastButtonState = currentButtonState;
 }
