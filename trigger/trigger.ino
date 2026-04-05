@@ -32,7 +32,6 @@ static bool wasConnected = false;
 unsigned long lastWiFiAttempt = 0;
 
 WiFiClientSecure client;
-HTTPClient https;
 
 const uint16_t HTTPS_CONNECT_TIMEOUT = 2000;
 const uint16_t HTTPS_RESPONSE_TIMEOUT = 3000;
@@ -170,9 +169,8 @@ void playSound(SOUNDS sound) {
 
 void ensureWiFi() {
   bool isConnected = WiFi.status() == WL_CONNECTED;
-  bool failed = WiFi.status() == WL_CONNECT_FAILED;
 
-  if (!isConnected && !failed) return;
+  if (isConnected) return;
   if (WIFI_NAME == "") return;
 
   if (isConnected && !wasConnected) {
@@ -213,6 +211,10 @@ void sendEvent(EVENT event) {
   //retries once
   for (int i = 0; i < 2; i++) {
     client.setInsecure();
+
+    HTTPClient https;
+    https.setConnectTimeout(HTTPS_CONNECT_TIMEOUT);
+    https.setTimeout(HTTPS_RESPONSE_TIMEOUT);
     https.begin(client, POSTEVENT_ENDPOINT);
     https.addHeader("Content-Type", "application/json");
 
