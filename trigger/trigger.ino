@@ -8,7 +8,7 @@
 #include <WiFiClientSecure.h>
 
 const bool DEBUG = true;
-const bool UNDERCLOCK = true;
+const bool UNDERCLOCK = false;
 
 const String FIREBASE_PROJECT = "punto-8888";
 const String FIREBASE_APIKEY = "AIzaSyA6sA_c3yNUZvvo_dZanhydLn7jXl-55hU";
@@ -341,15 +341,18 @@ void handleRoot() {
       "20px; padding: 30px; width: 100%; max-width: 400px; box-shadow: 0 20px "
       "40px rgba(0,0,0,0.4); }"
       ".net-item { display: flex; justify-content: space-between; align-items: "
-      "center; padding: 15px; border-radius: 12px; margin-bottom: 10px; "
-      "cursor: pointer; transition: all 0.2s ease; border: 1px solid "
-      "transparent; }"
-      ".net-item:hover { background: rgba(0, 242, 255, 0.1); border-color: "
-      "#00f2ff; }"
+      "center; padding: 18px 20px; border-bottom: 1px solid rgba(255,255,255,0.08); "
+      "cursor: pointer; transition: all 0.2s ease; background: rgba(255,255,255,0.02); "
+      "position: relative; overflow: hidden; }"
+      ".net-item:last-child { border-bottom: none; }"
+      ".net-item:hover { background: rgba(0, 242, 255, 0.08); }"
+      ".net-item::after { content: '›'; color: #00f2ff; font-size: 1.5rem; "
+      "margin-left: 10px; opacity: 0.5; transition: transform 0.2s; }"
+      ".net-item:hover::after { transform: translateX(5px); opacity: 1; }"
       ".ssid { font-weight: 600; font-size: 1.1rem; }"
       ".rssi { color: #00f2ff; font-family: monospace; }"
       "form { display: none; flex-direction: column; gap: 15px; margin-top: "
-      "20px; }"
+      "20px; padding: 25px; }"
       "input { background: rgba(255, 255, 255, 0.1); border: 1px solid "
       "rgba(255, 255, 255, 0.2); border-radius: 10px; padding: 12px; color: "
       "#fff; font-size: 1rem; outline: none; transition: border-color 0.2s; }"
@@ -364,7 +367,7 @@ void handleRoot() {
       "</style></head><body>"
       "<h1>Padel Push</h1>"
       "<h2>SETUP PORTAL</h2>"
-      "<div class='card'>"
+      "<div class='card' style='padding: 0; overflow: hidden; border-radius: 12px;'>"
       "<div id='net-list'>";
 
   int n = WiFi.scanNetworks();
@@ -435,6 +438,11 @@ void handleConnect() {
   }
 }
 
+void handleRedirect() {
+  server.sendHeader("Location", "http://192.168.4.1/", true);
+  server.send(302, "text/plain", "");
+}
+
 void startCaptivePortal() {
   log("Starting Captive Portal...");
   isConfigMode = true;
@@ -446,13 +454,13 @@ void startCaptivePortal() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/connect", HTTP_POST, handleConnect);
 
-  // Captive Portal Detection URLs
-  server.on("/generate_204", handleRoot);        // Android
-  server.on("/hotspot-detect.html", handleRoot); // iOS
-  server.on("/canonical.html", handleRoot);      // Android/Other
-  server.on("/success.txt", handleRoot);         // macOS/Other
-
-  server.onNotFound(handleRoot); // Redirect all other requests to root
+  // Captive Portal Detection URLs - Important for auto-opening
+  server.on("/generate_204", handleRedirect);        // Android
+  server.on("/hotspot-detect.html", handleRedirect); // iOS
+  server.on("/canonical.html", handleRedirect);      // Android/Other
+  server.on("/success.txt", handleRedirect);         // macOS/Other
+  
+  server.onNotFound(handleRedirect); // Redirect all other requests to root
   server.begin();
 
   log("AP IP: " + WiFi.softAPIP().toString());
