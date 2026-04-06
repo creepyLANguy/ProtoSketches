@@ -158,7 +158,7 @@ void saveCurrentTeam(char team) {
   preferences.end();
 }
 
-void startSound(Sound& sound) {
+void startSound(Sound &sound) {
   currentSound = sound;
   soundIndex = 0;
   soundStart = millis();
@@ -299,6 +299,7 @@ void ensureWiFi() {
   if (isConnected && !wasConnected) {
     log("WiFi Connected");
     playSound(SND_CONNECTED);
+    digitalWrite(LED_PIN, LOW); // Ensure LED is OFF on connection
     esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
   } else if (!isConnected && wasConnected) {
     log("Lost connection");
@@ -332,6 +333,9 @@ void handleRoot() {
       "text-align: center; }"
       "h1 { color: #f7ff00; font-weight: 800; letter-spacing: -0.05em; "
       "margin-bottom: 30px; font-size: 2.5rem; text-transform: uppercase; }"
+      "h2 { color: #ffffff; font-weight: 400; font-size: 1.2rem; margin-top: "
+      "-25px; "
+      "margin-bottom: 30px; opacity: 0.8; text-transform: lowercase; }"
       ".card { background: rgba(255, 255, 255, 0.05); backdrop-filter: "
       "blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: "
       "20px; padding: 30px; width: 100%; max-width: 400px; box-shadow: 0 20px "
@@ -359,6 +363,7 @@ void handleRoot() {
       "text-transform: uppercase; letter-spacing: 0.2em; }"
       "</style></head><body>"
       "<h1>Padel Push</h1>"
+      "<h2>SETUP PORTAL</h2>"
       "<div class='card'>"
       "<div id='net-list'>";
 
@@ -382,7 +387,7 @@ void handleRoot() {
   html += "</div>"
           "<form id='config-form' action='/connect' method='POST'>"
           "<input type='hidden' id='ssid' name='ssid'>"
-          "<input type='password' name='pass' placeholder='Password' required>"
+          "<input type='password' name='pass' placeholder='Password'>"
           "<button type='submit'>Connect</button>"
           "</form>"
           "</div>"
@@ -401,6 +406,8 @@ void handleRoot() {
 void handleConnect() {
   String ssid = server.arg("ssid");
   String pass = server.arg("pass");
+  ssid.trim();
+  pass.trim();
 
   String html =
       "<!DOCTYPE html><html><head><meta name='viewport' "
@@ -413,7 +420,8 @@ void handleConnect() {
       "<h2>Connecting to " +
       ssid +
       "...</h2>"
-      "<p>The device will now attempt to connect.<br/>If successful, this setup potrtal will close.</p>"
+      "<p>The device will now attempt to connect.<br/>If successful, this "
+      "setup potrtal will close.</p>"
       "</div></body></html>";
   server.send(200, "text/html", html);
 
@@ -437,7 +445,14 @@ void startCaptivePortal() {
 
   server.on("/", HTTP_GET, handleRoot);
   server.on("/connect", HTTP_POST, handleConnect);
-  server.onNotFound(handleRoot); // Redirect all to root for captive portal
+
+  // Captive Portal Detection URLs
+  server.on("/generate_204", handleRoot);        // Android
+  server.on("/hotspot-detect.html", handleRoot); // iOS
+  server.on("/canonical.html", handleRoot);      // Android/Other
+  server.on("/success.txt", handleRoot);         // macOS/Other
+
+  server.onNotFound(handleRoot); // Redirect all other requests to root
   server.begin();
 
   log("AP IP: " + WiFi.softAPIP().toString());
@@ -500,7 +515,7 @@ void undo() { sendEvent(EVENT_UNDO); }
 
 void factoryReset() {
   log("FACTORY RESET INITIATED");
-  
+
   preferences.begin("wifi-store", false);
   preferences.clear();
   preferences.end();
@@ -543,12 +558,13 @@ void setup() {
   loadWiFiList();
   loadCurrentTeam();
 
-  //DEVICEID = WiFi.macAddress();
+  // DEVICEID = WiFi.macAddress();
   DEVICEID.replace(":", ""); // Clean device ID
   uint8_t baseMac[6];
-	esp_read_mac(baseMac, ESP_MAC_BASE);
+  esp_read_mac(baseMac, ESP_MAC_BASE);
   char baseMacChr[18] = {0};
-	sprintf(baseMacChr, "%02X:%02X:%02X:%02X:%02X:%02X", baseMac[0], baseMac[1], baseMac[2], baseMac[3], baseMac[4], baseMac[5]);
+  sprintf(baseMacChr, "%02X:%02X:%02X:%02X:%02X:%02X", baseMac[0], baseMac[1],
+          baseMac[2], baseMac[3], baseMac[4], baseMac[5]);
   DEVICEID = String(baseMacChr);
   DEVICEID.replace(":", ""); // Clean device ID
 
