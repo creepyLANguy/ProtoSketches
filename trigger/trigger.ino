@@ -335,7 +335,7 @@ void handleRoot() {
       "margin-bottom: 30px; font-size: 2.5rem; text-transform: uppercase; }"
       "h2 { color: #ffffff; font-weight: 400; font-size: 1.2rem; margin-top: "
       "-25px; "
-      "margin-bottom: 30px; opacity: 0.8; text-transform: lowercase; }"
+      "margin-bottom: 30px; opacity: 0.8; }"
       ".card { background: rgba(255, 255, 255, 0.05); backdrop-filter: "
       "blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: "
       "20px; padding: 30px; width: 100%; max-width: 400px; box-shadow: 0 20px "
@@ -412,34 +412,48 @@ void handleConnect() {
   ssid.trim();
   pass.trim();
 
+  // Show connecting page
   String html =
-      "<!DOCTYPE html><html><head><meta name='viewport' "
-      "content='width=device-width, initial-scale=1.0'>"
-      "<style>body { background: #0a0e17; color: #fff; font-family: "
-      "sans-serif; display: flex; align-items: center; justify-content: "
-      "center; height: 100vh; margin: 0; text-align: center; }"
+      "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+      "<style>body { background: #0a0e17; color: #fff; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }"
       "h2 { color: #00f2ff; }</style></head><body>"
       "<div>"
-      "<h2>Connecting to " +
-      ssid +
-      "...</h2>"
-      "<p>The device will now attempt to connect.<br/>If successful, this "
-      "setup potrtal will close.</p>"
+      "<h2>Connecting to " + ssid + "...</h2>"
+      "<p>Please wait while we connect your device.</p>"
       "</div></body></html>";
   server.send(200, "text/html", html);
 
-  delay(1000);
+  delay(1000); // small delay before attempting connection
   if (tryConnect(ssid, pass)) {
+    // ✅ Connected successfully
+    playSound(SND_CONNECTED);
+
+    // Show success page
+    html =
+        "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+        "<style>body { background: #0a0e17; color: #0ff200; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }"
+        "h2 { font-size: 2rem; }</style></head><body>"
+        "<div>"
+        "<h2>✅ Connected Successfully!</h2>"
+        "<p>This portal will close automatically.</p>"
+        "</div></body></html>";
+    server.send(200, "text/html", html);
+
+    delay(1500); // Let user see the success message and hear the sound
+
+    // Close AP mode and switch to STA
     isConfigMode = false;
     WiFi.softAPdisconnect(true);
     log("Switching to STA mode");
   } else {
+    // Failed to connect
     log("Failed to connect, returning to AP mode");
+    playSound(SND_NO_WIFI);
   }
 }
 
 void handleRedirect() {
-  server.sendHeader("Location", "http://192.168.4.1/", true);
+  server.sendHeader("Location", "/", true);
   server.send(302, "text/plain", "");
 }
 
@@ -447,20 +461,38 @@ void startCaptivePortal() {
   log("Starting Captive Portal...");
   isConfigMode = true;
   WiFi.mode(WIFI_AP);
-  WiFi.softAP("Padel Push Device - " + DEVICEID);
+  WiFi.softAP("Padel Push Device - " + DEVICEID, "", 1, false, 4);
 
   dnsServer.start(53, "*", WiFi.softAPIP());
 
   server.on("/", HTTP_GET, handleRoot);
   server.on("/connect", HTTP_POST, handleConnect);
 
-  // Captive Portal Detection URLs - Important for auto-opening
-  server.on("/generate_204", handleRedirect);        // Android
-  server.on("/hotspot-detect.html", handleRedirect); // iOS
-  server.on("/canonical.html", handleRedirect);      // Android/Other
-  server.on("/success.txt", handleRedirect);         // macOS/Other
+  // Android
+  server.on("/generate_204", []() {
+    server.send(200, "text/plain", "OK"); // NOT 204 → forces popup
+  });
+
+  // iOS / macOS
+  server.on("/hotspot-detect.html", []() {
+    server.send(200, "text/html",
+                "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>");
+  });
+
+  // Windows
+  server.on("/connecttest.txt", []() {
+    server.send(200, "text/plain", "Microsoft Connect Test"); // mismatch triggers portal
+  });
+
+  server.on("/ncsi.txt", []() {
+    server.send(200, "text/plain", "Microsoft NCSI");
+  });
   
-  server.onNotFound(handleRedirect); // Redirect all other requests to root
+  server.onNotFound([]() {
+    server.sendHeader("Location", "/", true);
+    server.send(302, "text/plain", "");
+  });
+  
   server.begin();
 
   log("AP IP: " + WiFi.softAPIP().toString());
