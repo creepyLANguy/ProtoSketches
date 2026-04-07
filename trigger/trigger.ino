@@ -370,6 +370,7 @@ void handleRoot() {
       "<div class='card' style='padding: 0; overflow: hidden; border-radius: 12px;'>"
       "<div id='net-list'>";
 
+  WiFi.disconnect(); // Ensure we are not trying to connect while scanning
   int n = WiFi.scanNetworks();
   if (n == 0) {
     html += "<p>No networks found.</p>";
@@ -390,16 +391,23 @@ void handleRoot() {
   html += "</div>"
           "<form id='config-form' action='/connect' method='POST'>"
           "<input type='hidden' id='ssid' name='ssid'>"
+          "<div style='margin-bottom: 20px; font-weight: 600; color: #00f2ff;' id='selected-ssid'></div>"
           "<input type='password' name='pass' placeholder='Password'>"
           "<button type='submit'>Connect</button>"
+          "<button type='button' style='margin-top: 10px; background: rgba(255,255,255,0.1); color: #fff;' onclick='showList()'>Back</button>"
           "</form>"
           "</div>"
           "<div class='footer'>© 2026 Padel Push - All Rights Reserved</div>"
           "<script>"
           "function selectNet(ssid) {"
           "  document.getElementById('ssid').value = ssid;"
+          "  document.getElementById('selected-ssid').innerText = 'Network: ' + ssid;"
           "  document.getElementById('net-list').style.display = 'none';"
           "  document.getElementById('config-form').style.display = 'flex';"
+          "}"
+          "function showList() {"
+          "  document.getElementById('net-list').style.display = 'block';"
+          "  document.getElementById('config-form').style.display = 'none';"
           "}"
           "</script></body></html>";
 
@@ -426,16 +434,21 @@ void handleConnect() {
   delay(1000); // small delay before attempting connection
   if (tryConnect(ssid, pass)) {
     // Show success page
-    // html =
-    //     "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>"
-    //     "<style>body { background: #0a0e17; color: #0ff200; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }"
-    //     "h2 { font-size: 2rem; }</style></head><body>"
-    //     "<div>"
-    //     "<h2>✅ Connected Successfully!</h2>"
-    //     "<p>This portal will close automatically.</p>"
-    //     "</div></body></html>";
-    // server.send(200, "text/html", html);
-    // delay(1500); // Let user see the success message and hear the sound
+    html =
+        "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+        "<style>body { background: #0a0e17; color: #f7ff00; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }"
+        "h2 { font-size: 2rem; color: #f7ff00; }</style></head><body>"
+        "<div>"
+        "<h2>✅ Connected Successfully!</h2>"
+        "<p>The device is now connected to " + ssid + ".</p>"
+        "<p>This window will close automatically.</p>"
+        "</div>"
+        "<script>setTimeout(function(){ window.close(); }, 3000);</script>"
+        "</body></html>";
+    server.send(200, "text/html", html);
+    
+    log("Connected! Closing AP mode in 2 seconds...");
+    delay(2000); // Let user see the success message and hear the sound
 
     // Close AP mode and switch to STA
     isConfigMode = false;
@@ -443,8 +456,24 @@ void handleConnect() {
     log("Switching to STA mode");
   } else {
     // Failed to connect
-    log("Failed to connect, returning to AP mode");
+    log("Failed to connect, showing failure page");
+    WiFi.disconnect(); // Explicitly disconnect to clean up
     playSound(SND_NO_WIFI);
+
+    html =
+        "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+        "<style>body { background: #0a0e17; color: #fff; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; padding: 20px; }"
+        "h2 { color: #ff3b3b; font-size: 2rem; }"
+        ".btn { background: #f7ff00; color: #0a0e17; border: none; border-radius: 10px; padding: 15px 30px; font-weight: 800; text-transform: uppercase; cursor: pointer; text-decoration: none; display: inline-block; margin-top: 20px; }"
+        "</style></head><body>"
+        "<div>"
+        "<h2>❌ Connection Failed</h2>"
+        "<p>Could not connect to <b>" + ssid + "</b>.</p>"
+        "<p>Please check the password and try again.</p>"
+        "<a href='/' class='btn'>Try Again</a>"
+        "</div>"
+        "</body></html>";
+    server.send(200, "text/html", html);
   }
 }
 
@@ -476,11 +505,11 @@ void startCaptivePortal() {
   server.on("/", HTTP_GET, handleRoot);
   server.on("/connect", HTTP_POST, handleConnect);
 
-  // Standard captive portal routes
-  server.on("/generate_204", []() { server.send(200, "text/plain", "OK"); });
-  server.on("/hotspot-detect.html", []() { server.send(200, "text/html", "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>"); });
-  server.on("/connecttest.txt", []() { server.send(200, "text/plain", "Microsoft Connect Test"); });
-  server.on("/ncsi.txt", []() { server.send(200, "text/plain", "Microsoft NCSI"); });
+  // Standard captive portal routes - Redirect to root to trigger portal popup
+  server.on("/generate_204", handleRedirect);
+  server.on("/hotspot-detect.html", handleRedirect);
+  server.on("/connecttest.txt", handleRedirect);
+  server.on("/ncsi.txt", handleRedirect);
 
   server.onNotFound([]() {
     server.sendHeader("Location", "/", true);
