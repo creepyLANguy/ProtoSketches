@@ -331,7 +331,7 @@ void handleRoot() {
       "display: flex; flex-direction: column; align-items: center; "
       "justify-content: center; min-height: 100vh; margin: 0; padding: 20px; "
       "text-align: center; }"
-      "h1 { color: #f7ff00; font-weight: 800; letter-spacing: -0.05em; "
+      "h1 { color: #f7ff00; font-weight: 800; "
       "margin-bottom: 30px; font-size: 2.5rem; text-transform: uppercase; }"
       "h2 { color: #ffffff; font-weight: 400; font-size: 1.2rem; margin-top: "
       "-25px; "
@@ -366,7 +366,7 @@ void handleRoot() {
       "text-transform: uppercase; letter-spacing: 0.2em; }"
       "</style></head><body>"
       "<h1>Padel Push</h1>"
-      "<h2>SETUP PORTAL</h2>"
+      "<h2>Setup Portal</h2>"
       "<div class='card' style='padding: 0; overflow: hidden; border-radius: 12px;'>"
       "<div id='net-list'>";
 
@@ -425,21 +425,17 @@ void handleConnect() {
 
   delay(1000); // small delay before attempting connection
   if (tryConnect(ssid, pass)) {
-    // ✅ Connected successfully
-    playSound(SND_CONNECTED);
-
     // Show success page
-    html =
-        "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>"
-        "<style>body { background: #0a0e17; color: #0ff200; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }"
-        "h2 { font-size: 2rem; }</style></head><body>"
-        "<div>"
-        "<h2>✅ Connected Successfully!</h2>"
-        "<p>This portal will close automatically.</p>"
-        "</div></body></html>";
-    server.send(200, "text/html", html);
-
-    delay(1500); // Let user see the success message and hear the sound
+    // html =
+    //     "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>"
+    //     "<style>body { background: #0a0e17; color: #0ff200; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }"
+    //     "h2 { font-size: 2rem; }</style></head><body>"
+    //     "<div>"
+    //     "<h2>✅ Connected Successfully!</h2>"
+    //     "<p>This portal will close automatically.</p>"
+    //     "</div></body></html>";
+    // server.send(200, "text/html", html);
+    // delay(1500); // Let user see the success message and hear the sound
 
     // Close AP mode and switch to STA
     isConfigMode = false;
@@ -457,37 +453,35 @@ void handleRedirect() {
   server.send(302, "text/plain", "");
 }
 
+IPAddress apIP(192, 168, 4, 1);
+IPAddress gateway(192, 168, 4, 1);  // Typically same as AP IP
+IPAddress subnet(255, 255, 255, 0);
+
 void startCaptivePortal() {
   log("Starting Captive Portal...");
   isConfigMode = true;
   WiFi.mode(WIFI_AP);
+
+  // Set static AP IP
+  if (!WiFi.softAPConfig(apIP, gateway, subnet)) {
+      log("Failed to configure AP IP!");
+  }
+
   WiFi.softAP("Padel Push Device - " + DEVICEID, "", 1, false, 4);
 
+  // Start DNS server to redirect all requests to ESP
   dnsServer.start(53, "*", WiFi.softAPIP());
 
+  // Setup web server routes
   server.on("/", HTTP_GET, handleRoot);
   server.on("/connect", HTTP_POST, handleConnect);
 
-  // Android
-  server.on("/generate_204", []() {
-    server.send(200, "text/plain", "OK"); // NOT 204 → forces popup
-  });
+  // Standard captive portal routes
+  server.on("/generate_204", []() { server.send(200, "text/plain", "OK"); });
+  server.on("/hotspot-detect.html", []() { server.send(200, "text/html", "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>"); });
+  server.on("/connecttest.txt", []() { server.send(200, "text/plain", "Microsoft Connect Test"); });
+  server.on("/ncsi.txt", []() { server.send(200, "text/plain", "Microsoft NCSI"); });
 
-  // iOS / macOS
-  server.on("/hotspot-detect.html", []() {
-    server.send(200, "text/html",
-                "<HTML><HEAD><TITLE>Success</TITLE></HEAD><BODY>Success</BODY></HTML>");
-  });
-
-  // Windows
-  server.on("/connecttest.txt", []() {
-    server.send(200, "text/plain", "Microsoft Connect Test"); // mismatch triggers portal
-  });
-
-  server.on("/ncsi.txt", []() {
-    server.send(200, "text/plain", "Microsoft NCSI");
-  });
-  
   server.onNotFound([]() {
     server.sendHeader("Location", "/", true);
     server.send(302, "text/plain", "");
@@ -569,7 +563,7 @@ void factoryReset() {
 
   WiFi.disconnect(true, true);
   log("Storage cleared. Restarting...");
-  delay(500);
+  delay(1000);
   ESP.restart();
 }
 
@@ -599,7 +593,6 @@ void setup() {
   loadCurrentTeam();
 
   // DEVICEID = WiFi.macAddress();
-  DEVICEID.replace(":", ""); // Clean device ID
   uint8_t baseMac[6];
   esp_read_mac(baseMac, ESP_MAC_BASE);
   char baseMacChr[18] = {0};
