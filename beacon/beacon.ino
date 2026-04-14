@@ -18,12 +18,12 @@ const int BUZZER_PIN = 4;
 
 // Ultrasonic sensor wiring (HC-SR04 style)
 const int TRIG_PIN = 5;
-const int ECHO_PIN = 6;
+const int ECHO_PIN = 10;
 
 // Team selector wire the SPDT toggle switch so one of these pins is pulled LOW
 // when the corresponding team is selected. The pins use internal pullups.
 const int TEAM_A_PIN = 7;
-const int TEAM_B_PIN = 9;
+const int TEAM_B_PIN = 8;
 
 const int DISTANCE_THRESHOLD_CM = 30;
 const int DISTANCE_HYSTERESIS_CM = 10;
@@ -609,6 +609,7 @@ void loop() {
   if (now - lastDistanceSample >= DISTANCE_SAMPLE_INTERVAL) {
     lastDistanceSample = now;
     float distance = measureDistanceCm();
+    log(distance);
     bool objectDetected = (distance > 0 && distance <= DISTANCE_THRESHOLD_CM);
     bool objectCleared = (distance < 0 || distance > DISTANCE_THRESHOLD_CM + DISTANCE_HYSTERESIS_CM);
 
