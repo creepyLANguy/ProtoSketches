@@ -23,7 +23,7 @@ const int ECHO_PIN = 6;
 // Team selector wire the SPDT toggle switch so one of these pins is pulled LOW
 // when the corresponding team is selected. The pins use internal pullups.
 const int TEAM_A_PIN = 7;
-const int TEAM_B_PIN = 8;
+const int TEAM_B_PIN = 9;
 
 const int DISTANCE_THRESHOLD_CM = 30;
 const int DISTANCE_HYSTERESIS_CM = 10;
