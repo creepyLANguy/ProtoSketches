@@ -1,15 +1,18 @@
 const bool DEBUG = true;
 const bool UNDERCLOCK = false;
 
+const int DISTANCE_THRESHOLD_CM = 10;
+const int DISTANCE_HYSTERESIS_CM = 10;
+const unsigned long DISTANCE_SAMPLE_INTERVAL_MS = 300;
+const int ECHO_TIMEOUT = 30000;
+
 const int TRIG_PIN = 5;
 const int ECHO_PIN = 21;
 const int LED_PIN = 0;
 const int BUZZER_PIN = 4;
 
-const int DISTANCE_THRESHOLD_CM = 10;
-const int DISTANCE_HYSTERESIS_CM = 10;
-const unsigned long DISTANCE_SAMPLE_INTERVAL_MS = 300;
-const int ECHO_TIMEOUT = 30000;
+const int TEAM_A_PIN = 1;
+const int TEAM_B_PIN = 2;
 
 #define SOUND_SPEED 0.034
 
@@ -115,9 +118,33 @@ void playSound(SOUNDS sound) {
   }
 }
 
+float measureDistance_cm(){
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+
+  digitalWrite(TRIG_PIN, LOW);
+
+  detection_duration = pulseIn(ECHO_PIN, HIGH, ECHO_TIMEOUT);
+
+  if (detection_duration == 0) {
+    return -1;
+  } 
+  
+  return (detection_duration * SOUND_SPEED) / 2;
+}
+
+String getSelectedTeam() {
+  return String(digitalRead(TEAM_A_PIN) == LOW ? 'A' : 'B');
+}
+
 void log(String s) {
-  if (DEBUG)
-    Serial.println(s);
+  if (DEBUG == false)
+    return;
+
+  Serial.println(s);
 }
 
 void setup() {
@@ -132,6 +159,8 @@ void setup() {
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
   pinMode(LED_PIN, OUTPUT);
+  pinMode(TEAM_A_PIN, INPUT_PULLUP);
+  pinMode(TEAM_B_PIN, INPUT_PULLUP);
 
   digitalWrite(TRIG_PIN, LOW);
   
@@ -149,37 +178,26 @@ void loop() {
   if (now - lastDistanceSample >= DISTANCE_SAMPLE_INTERVAL_MS) {
     lastDistanceSample = now;
 
-    digitalWrite(TRIG_PIN, LOW);
-    delayMicroseconds(2);
-
-    digitalWrite(TRIG_PIN, HIGH);
-    delayMicroseconds(10);
-
-    digitalWrite(TRIG_PIN, LOW);
-
-    detection_duration = pulseIn(ECHO_PIN, HIGH, ECHO_TIMEOUT);
-
-    if (detection_duration == 0) {
-      log("No reading");
-      digitalWrite(LED_PIN, LOW);
-    } 
+    distance_cm = measureDistance_cm();
+    if (distance_cm < 0) {
+      log("No reading...");
+    }
     else {
-      distance_cm = (detection_duration * SOUND_SPEED) / 2;
+      log("Distance: " + String((int)distance_cm) + " cm");
+    }
 
-      log("Distance (cm): " + String(distance_cm));
+    bool objectDetected = (distance_cm > 0 && distance_cm <= DISTANCE_THRESHOLD_CM);
+    bool objectCleared = (distance_cm < 0 || distance_cm > DISTANCE_THRESHOLD_CM + DISTANCE_HYSTERESIS_CM);
 
-      bool objectDetected = (distance_cm > 0 && distance_cm <= DISTANCE_THRESHOLD_CM);
-      bool objectCleared = (distance_cm < 0 || distance_cm > DISTANCE_THRESHOLD_CM + DISTANCE_HYSTERESIS_CM);
-
-      if (objectDetected && !hasTriggered) {
-        hasTriggered = true;
-        digitalWrite(LED_PIN, HIGH);
-        playSound(SND_ADD_POINT);
-      } 
-      else if (objectCleared) {
-        hasTriggered = false;
-        digitalWrite(LED_PIN, LOW);
-      }      
+    if (objectDetected && !hasTriggered) {
+      hasTriggered = true;
+      digitalWrite(LED_PIN, HIGH);
+      playSound(SND_ADD_POINT);
+      log("Team selection: " + getSelectedTeam());
+    } 
+    else if (objectCleared) {
+      hasTriggered = false;
+      digitalWrite(LED_PIN, LOW);
     }
   }
 }
