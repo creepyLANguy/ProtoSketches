@@ -1,6 +1,9 @@
+const bool DEBUG = true;
+const bool UNDERCLOCK = false;
+
 const int TRIG_PIN = 5;
 const int ECHO_PIN = 21;
-const int LED_PIN = 8;
+const int LED_PIN = 0;
 const int BUZZER_PIN = 4;
 
 const int DISTANCE_THRESHOLD_CM = 10;
@@ -26,7 +29,7 @@ struct SoundStep {
   double pauseAfter;
 };
 
-const int MAX_SOUND_STEPS 10
+const int MAX_SOUND_STEPS = 10;
 
 struct Sound {
   SoundStep steps[MAX_SOUND_STEPS];
@@ -112,10 +115,19 @@ void playSound(SOUNDS sound) {
   }
 }
 
-void setup() {
-  Serial.begin(115200);
+void log(String s) {
+  if (DEBUG)
+    Serial.println(s);
+}
 
-  Serial.println("Setup Begin");
+void setup() {
+  if (DEBUG)
+    Serial.begin(115200);
+
+  log("\n\nSetting Up...");
+
+  if (UNDERCLOCK)
+    setCpuFrequencyMhz(80);
 
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
@@ -123,7 +135,7 @@ void setup() {
 
   digitalWrite(TRIG_PIN, LOW);
   
-  Serial.println("Setup Complete");
+  log("Setup Complete");
 }
 
 void loop() {
@@ -148,26 +160,25 @@ void loop() {
     detection_duration = pulseIn(ECHO_PIN, HIGH, ECHO_TIMEOUT);
 
     if (detection_duration == 0) {
-      Serial.println("No reading");
+      log("No reading");
       digitalWrite(LED_PIN, LOW);
     } 
     else {
       distance_cm = (detection_duration * SOUND_SPEED) / 2;
 
-      Serial.print("Distance (cm): ");
-      Serial.println(distance_cm);
+      log("Distance (cm): " + String(distance_cm));
 
       bool objectDetected = (distance_cm > 0 && distance_cm <= DISTANCE_THRESHOLD_CM);
       bool objectCleared = (distance_cm < 0 || distance_cm > DISTANCE_THRESHOLD_CM + DISTANCE_HYSTERESIS_CM);
 
       if (objectDetected && !hasTriggered) {
         hasTriggered = true;
-        digitalWrite(LED_PIN, LOW);
+        digitalWrite(LED_PIN, HIGH);
         playSound(SND_ADD_POINT);
       } 
       else if (objectCleared) {
         hasTriggered = false;
-        digitalWrite(LED_PIN, HIGH);
+        digitalWrite(LED_PIN, LOW);
       }      
     }
   }
