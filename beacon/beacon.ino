@@ -10,6 +10,9 @@
 const bool DEBUG = true;
 const bool UNDERCLOCK = false;
 
+const String FIREBASE_PROJECT = "punto-8888";
+const String FIREBASE_APIKEY = "AIzaSyA6sA_c3yNUZvvo_dZanhydLn7jXl-55hU";
+
 const int DISTANCE_THRESHOLD_CM = 10;
 const int DISTANCE_HYSTERESIS_CM = 10;
 const unsigned long DISTANCE_SAMPLE_INTERVAL_MS = 300;
@@ -82,6 +85,20 @@ Sound currentSound;
 int soundIndex = 0;
 unsigned long soundStart = 0;
 bool isPlayingSound = false;
+
+const uint16_t HTTPS_CONNECT_TIMEOUT = 2000;
+const uint16_t HTTPS_RESPONSE_TIMEOUT = 3000;
+const int POST_RETRY_INTERVAL = 250;
+const int PAYLOAD_BUFFER_SIZE = 256;
+
+String REGION = "africa-south1";
+String POSTEVENT_ENDPOINT = "https://" + REGION + "-" + FIREBASE_PROJECT +
+                            ".cloudfunctions.net/postEvent";
+
+typedef const char *EVENT;
+const EVENT EVENT_POINT_TEAM_A = "POINT_TEAM_A";
+const EVENT EVENT_POINT_TEAM_B = "POINT_TEAM_B";
+const EVENT EVENT_UNDO = "UNDO";
 
 void startSound(Sound &sound) {
   currentSound = sound;
@@ -500,6 +517,51 @@ void startCaptivePortal() {
   playSound(SND_NO_WIFI);
 }
 
+void sendEvent(EVENT event) {
+  if (WiFi.status() != WL_CONNECTED)
+    return;
+
+  char payload[PAYLOAD_BUFFER_SIZE];
+  snprintf(payload, sizeof(payload),
+           "{\"deviceId\":\"%s\",\"eventType\":\"%s\"}", DEVICEID.c_str(),
+           event);
+
+  // retries once
+  for (int i = 0; i < 2; i++) {
+    client.setInsecure();
+
+    HTTPClient https;
+    https.setConnectTimeout(HTTPS_CONNECT_TIMEOUT);
+    https.setTimeout(HTTPS_RESPONSE_TIMEOUT);
+    https.begin(client, POSTEVENT_ENDPOINT);
+    https.addHeader("Content-Type", "application/json");
+
+    log("\nEvent: \n" + String(event) + "\nEndpoint: \n" + POSTEVENT_ENDPOINT +
+        "\nPayload: \n" + payload);
+
+    int code = https.POST(payload);
+
+    log("\nResponse Code: \n" + String(code) + "\nResponse Message: \n" +
+        https.getString());
+
+    https.end();
+
+    if (code >= 200 && code < 300)
+      return;
+
+    delay(POST_RETRY_INTERVAL);
+  }
+
+  playSound(SND_HTTP_POST_FAILED);
+}
+
+void addPoint() {
+  playSound(SND_ADD_POINT);
+  String team = getSelectedTeam();
+  log("Add Point, Team: " + team);
+  sendEvent(team == "A" ? EVENT_POINT_TEAM_A : EVENT_POINT_TEAM_B);
+}
+
 void setup() {
   if (DEBUG)
     Serial.begin(115200);
@@ -584,8 +646,7 @@ void loop() {
         lastDetectionTime = now;
         hasTriggered = true;
         digitalWrite(LED_PIN, HIGH);
-        playSound(SND_ADD_POINT);      
-        log("Add Point, Team: " + getSelectedTeam());
+        addPoint();              
       }    
     } 
     else if (objectCleared) {
