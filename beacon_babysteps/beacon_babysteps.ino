@@ -1,3 +1,12 @@
+#include "esp_mac.h"
+#include "esp_wifi.h"
+#include <DNSServer.h>
+#include <HTTPClient.h>
+#include <Preferences.h>
+#include <WebServer.h>
+#include <WiFi.h>
+#include <WiFiClientSecure.h>
+
 const bool DEBUG = true;
 const bool UNDERCLOCK = false;
 
@@ -18,6 +27,20 @@ const int TEAM_B_PIN = 2;
 
 long detection_duration;
 float distance_cm;
+
+Preferences preferences;
+DNSServer dnsServer;
+WebServer server(80);
+
+const int MAX_WIFI_NETWORKS = 5;
+WiFiCreds savedWiFi[MAX_WIFI_NETWORKS];
+int wifiCount = 0;
+
+bool isConfigMode = false;
+unsigned long lastStatusFlash = 0;
+bool statusLedState = false;
+
+String DEVICEID = "";
 
 enum SOUNDS {
   SND_CONNECTED,
@@ -145,6 +168,54 @@ void log(String s) {
     return;
 
   Serial.println(s);
+}
+
+void loadWiFiList() {
+  preferences.begin("wifi-store", true);
+  wifiCount = preferences.getInt("count", 0);
+  for (int i = 0; i < wifiCount; i++) {
+    savedWiFi[i].ssid = preferences.getString(("s" + String(i)).c_str(), "");
+    savedWiFi[i].pass = preferences.getString(("p" + String(i)).c_str(), "");
+  }
+  preferences.end();
+}
+
+void saveWiFi(String ssid, String pass) {
+  // Check if already exists
+  int existingIdx = -1;
+  for (int i = 0; i < wifiCount; i++) {
+    if (savedWiFi[i].ssid == ssid) {
+      existingIdx = i;
+      break;
+    }
+  }
+
+  // Shift for MRU
+  if (existingIdx != -1) {
+    for (int i = existingIdx; i > 0; i--) {
+      savedWiFi[i] = savedWiFi[i - 1];
+    }
+  } else {
+    int limit =
+        (wifiCount < MAX_WIFI_NETWORKS) ? wifiCount : MAX_WIFI_NETWORKS - 1;
+    for (int i = limit; i > 0; i--) {
+      savedWiFi[i] = savedWiFi[i - 1];
+    }
+    if (wifiCount < MAX_WIFI_NETWORKS)
+      wifiCount++;
+  }
+
+  savedWiFi[0].ssid = ssid;
+  savedWiFi[0].pass = pass;
+
+  // Persist
+  preferences.begin("wifi-store", false);
+  preferences.putInt("count", wifiCount);
+  for (int i = 0; i < wifiCount; i++) {
+    preferences.putString(("s" + String(i)).c_str(), savedWiFi[i].ssid);
+    preferences.putString(("p" + String(i)).c_str(), savedWiFi[i].pass);
+  }
+  preferences.end();
 }
 
 void setup() {
