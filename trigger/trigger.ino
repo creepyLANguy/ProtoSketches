@@ -496,7 +496,15 @@ void startCaptivePortal() {
       log("Failed to configure AP IP!");
   }
 
-  WiFi.softAP("Padel Push Device - " + DEVICEID, "", 1, false, 4);
+  String shortId;
+  if (DEVICEID.length() >= 4) {
+    shortId = DEVICEID.substring(DEVICEID.length() - 4);
+  } else {
+    shortId = DEVICEID; // fallback if somehow shorter than 4 chars
+  }
+  String apName = "Padel Push | Beacon Basic - " + shortId;
+  log(apName);
+  WiFi.softAP(apName, "", 1, false, 4);
 
   // Start DNS server to redirect all requests to ESP
   dnsServer.start(53, "*", WiFi.softAPIP());
@@ -518,7 +526,8 @@ void startCaptivePortal() {
   
   server.begin();
 
-  log("AP IP: " + WiFi.softAPIP().toString());
+  log(WiFi.softAPIP().toString());
+  
   playSound(SND_NO_WIFI);
 }
 
