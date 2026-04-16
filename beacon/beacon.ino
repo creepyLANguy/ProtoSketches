@@ -16,7 +16,7 @@ const String FIREBASE_APIKEY = "AIzaSyA6sA_c3yNUZvvo_dZanhydLn7jXl-55hU";
 const int DISTANCE_THRESHOLD_CM = 10;
 const int DISTANCE_HYSTERESIS_CM = 10;
 const unsigned long DISTANCE_SAMPLE_INTERVAL_MS = 300;
-const int DETECTION_DEBOUNCE_MS = 3000;
+const int DETECTION_DEBOUNCE_MS = 2000;
 const int ECHO_TIMEOUT = 30000;
 
 const int TRIG_PIN = 5;
