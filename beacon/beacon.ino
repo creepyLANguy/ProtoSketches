@@ -10,24 +10,23 @@
 const bool DEBUG = true;
 const bool UNDERCLOCK = false;
 
-const String FIREBASE_PROJECT = "punto-8888";
-const String FIREBASE_APIKEY = "AIzaSyA6sA_c3yNUZvvo_dZanhydLn7jXl-55hU";
+const int DISTANCE_THRESHOLD_CM = 10;
+const int DISTANCE_HYSTERESIS_CM = 10;
+const unsigned long DISTANCE_SAMPLE_INTERVAL_MS = 300;
+const int ECHO_TIMEOUT = 30000;
 
-const int LED_PIN = 2;
+const int TRIG_PIN = 5;
+const int ECHO_PIN = 21;
+const int LED_PIN = 0;
 const int BUZZER_PIN = 4;
 
-// Ultrasonic sensor wiring (HC-SR04 style)
-const int TRIG_PIN = 5;
-const int ECHO_PIN = 10;
+const int TEAM_A_PIN = 1;
+const int TEAM_B_PIN = 2;
 
-// Team selector wire the SPDT toggle switch so one of these pins is pulled LOW
-// when the corresponding team is selected. The pins use internal pullups.
-const int TEAM_A_PIN = 7;
-const int TEAM_B_PIN = 8;
+#define SOUND_SPEED 0.034
 
-const int DISTANCE_THRESHOLD_CM = 30;
-const int DISTANCE_HYSTERESIS_CM = 10;
-const unsigned long DISTANCE_SAMPLE_INTERVAL = 120;
+long detection_duration;
+float distance_cm;
 
 Preferences preferences;
 DNSServer dnsServer;
@@ -38,6 +37,12 @@ struct WiFiCreds {
   String pass;
 };
 
+const int WIFI_RETRY_INTERVAL = 5000;
+static bool wasConnected = false;
+unsigned long lastWiFiAttempt = 0;
+
+WiFiClientSecure client;
+
 const int MAX_WIFI_NETWORKS = 5;
 WiFiCreds savedWiFi[MAX_WIFI_NETWORKS];
 int wifiCount = 0;
@@ -47,8 +52,6 @@ unsigned long lastStatusFlash = 0;
 bool statusLedState = false;
 
 String DEVICEID = "";
-
-typedef const char *EVENT;
 
 enum SOUNDS {
   SND_CONNECTED,
@@ -63,91 +66,20 @@ struct SoundStep {
   double pauseAfter;
 };
 
-#define MAX_STEPS 10
+const int MAX_SOUND_STEPS = 10;
 
 struct Sound {
-  SoundStep steps[MAX_STEPS];
+  SoundStep steps[MAX_SOUND_STEPS];
   int length;
 };
 
-const int BUZZER_TONE_CLICK = 3000;
+const int BUZZER_TONE = 3000;
 const int BUZZER_DURATION = 200;
-
-const int DEBOUNCE_TIME = 50;
-const int PRESS_COOLDOWN = 500;
-
-const int UNDO_HOLD_THRESHOLD = 2000;
-const int SWITCH_TEAM_HOLD_THRESHOLD = 5000;
-const int FACTORY_RESET_HOLD_THRESHOLD = 15000;
-
-const int WIFI_RETRY_INTERVAL = 5000;
-static bool wasConnected = false;
-unsigned long lastWiFiAttempt = 0;
-
-WiFiClientSecure client;
-
-const uint16_t HTTPS_CONNECT_TIMEOUT = 2000;
-const uint16_t HTTPS_RESPONSE_TIMEOUT = 3000;
-const int POST_RETRY_INTERVAL = 250;
-const int PAYLOAD_BUFFER_SIZE = 256;
-
-String REGION = "africa-south1";
-
-String POSTEVENT_ENDPOINT = "https://" + REGION + "-" + FIREBASE_PROJECT +
-                            ".cloudfunctions.net/postEvent";
-
-const EVENT EVENT_POINT_TEAM_A = "POINT_TEAM_A";
-const EVENT EVENT_POINT_TEAM_B = "POINT_TEAM_B";
-const EVENT EVENT_UNDO = "UNDO";
 
 Sound currentSound;
 int soundIndex = 0;
 unsigned long soundStart = 0;
 bool isPlayingSound = false;
-
-void loadWiFiList() {
-  preferences.begin("wifi-store", true);
-  wifiCount = preferences.getInt("count", 0);
-  for (int i = 0; i < wifiCount; i++) {
-    savedWiFi[i].ssid = preferences.getString(("s" + String(i)).c_str(), "");
-    savedWiFi[i].pass = preferences.getString(("p" + String(i)).c_str(), "");
-  }
-  preferences.end();
-}
-
-void saveWiFi(String ssid, String pass) {
-  int existingIdx = -1;
-  for (int i = 0; i < wifiCount; i++) {
-    if (savedWiFi[i].ssid == ssid) {
-      existingIdx = i;
-      break;
-    }
-  }
-
-  if (existingIdx != -1) {
-    for (int i = existingIdx; i > 0; i--) {
-      savedWiFi[i] = savedWiFi[i - 1];
-    }
-  } else {
-    int limit = (wifiCount < MAX_WIFI_NETWORKS) ? wifiCount : MAX_WIFI_NETWORKS - 1;
-    for (int i = limit; i > 0; i--) {
-      savedWiFi[i] = savedWiFi[i - 1];
-    }
-    if (wifiCount < MAX_WIFI_NETWORKS)
-      wifiCount++;
-  }
-
-  savedWiFi[0].ssid = ssid;
-  savedWiFi[0].pass = pass;
-
-  preferences.begin("wifi-store", false);
-  preferences.putInt("count", wifiCount);
-  for (int i = 0; i < wifiCount; i++) {
-    preferences.putString(("s" + String(i)).c_str(), savedWiFi[i].ssid);
-    preferences.putString(("p" + String(i)).c_str(), savedWiFi[i].pass);
-  }
-  preferences.end();
-}
 
 void startSound(Sound &sound) {
   currentSound = sound;
@@ -183,24 +115,24 @@ void updateSound() {
 // 🔊 SOUND DEFINITIONS
 // ==========================
 
-Sound SND_ADD_POINT_OBJ = {{{BUZZER_TONE_CLICK, BUZZER_DURATION, 0}}, 1};
+Sound SND_ADD_POINT_OBJ = {{{BUZZER_TONE, BUZZER_DURATION, }}, 1};
 
-Sound SND_CONNECTED_OBJ = {{{BUZZER_TONE_CLICK / 4, 80, 50},
-                            {BUZZER_TONE_CLICK / 3, 100, 50},
-                            {BUZZER_TONE_CLICK / 2, 120, 0}},
+Sound SND_CONNECTED_OBJ = {{{BUZZER_TONE / 4, 80, 50},
+                            {BUZZER_TONE / 3, 100, 50},
+                            {BUZZER_TONE / 2, 120, 0}},
                            3};
 
-Sound SND_NO_WIFI_OBJ = {{{BUZZER_TONE_CLICK / 2, 80, 50},
-                          {BUZZER_TONE_CLICK / 3, 80, 50},
-                          {BUZZER_TONE_CLICK / 4, 80, 50},
-                          {BUZZER_TONE_CLICK / 2, 80, 50},
-                          {BUZZER_TONE_CLICK / 3, 80, 50},
-                          {BUZZER_TONE_CLICK / 4, 80, 0}},
+Sound SND_NO_WIFI_OBJ = {{{BUZZER_TONE / 2, 80, 50},
+                          {BUZZER_TONE / 3, 80, 50},
+                          {BUZZER_TONE / 4, 80, 50},
+                          {BUZZER_TONE / 2, 80, 50},
+                          {BUZZER_TONE / 3, 80, 50},
+                          {BUZZER_TONE / 4, 80, 0}},
                          6};
 
-Sound SND_HTTP_FAIL_OBJ = {{{BUZZER_TONE_CLICK / 2, 200, 200},
-                            {BUZZER_TONE_CLICK / 2, 200, 200},
-                            {BUZZER_TONE_CLICK / 2, 400, 0}},
+Sound SND_HTTP_FAIL_OBJ = {{{BUZZER_TONE / 2, 200, 200},
+                            {BUZZER_TONE / 2, 200, 200},
+                            {BUZZER_TONE / 2, 400, 0}},
                            3};
 
 void playSound(SOUNDS sound) {
@@ -220,9 +152,82 @@ void playSound(SOUNDS sound) {
   }
 }
 
-// ==========================
-// WIFI + API
-// ==========================
+float measureDistance_cm(){
+  digitalWrite(TRIG_PIN, LOW);
+  delayMicroseconds(2);
+
+  digitalWrite(TRIG_PIN, HIGH);
+  delayMicroseconds(10);
+
+  digitalWrite(TRIG_PIN, LOW);
+
+  detection_duration = pulseIn(ECHO_PIN, HIGH, ECHO_TIMEOUT);
+
+  if (detection_duration == 0) {
+    return -1;
+  } 
+  
+  return (detection_duration * SOUND_SPEED) / 2;
+}
+
+String getSelectedTeam() {
+  return String(digitalRead(TEAM_A_PIN) == LOW ? 'A' : 'B');
+}
+
+void log(String s) {
+  if (DEBUG == false)
+    return;
+
+  Serial.println(s);
+}
+
+void loadWiFiList() {
+  preferences.begin("wifi-store", true);
+  wifiCount = preferences.getInt("count", 0);
+  for (int i = 0; i < wifiCount; i++) {
+    savedWiFi[i].ssid = preferences.getString(("s" + String(i)).c_str(), "");
+    savedWiFi[i].pass = preferences.getString(("p" + String(i)).c_str(), "");
+  }
+  preferences.end();
+}
+
+void saveWiFi(String ssid, String pass) {
+  // Check if already exists
+  int existingIdx = -1;
+  for (int i = 0; i < wifiCount; i++) {
+    if (savedWiFi[i].ssid == ssid) {
+      existingIdx = i;
+      break;
+    }
+  }
+
+  // Shift for MRU
+  if (existingIdx != -1) {
+    for (int i = existingIdx; i > 0; i--) {
+      savedWiFi[i] = savedWiFi[i - 1];
+    }
+  } else {
+    int limit =
+        (wifiCount < MAX_WIFI_NETWORKS) ? wifiCount : MAX_WIFI_NETWORKS - 1;
+    for (int i = limit; i > 0; i--) {
+      savedWiFi[i] = savedWiFi[i - 1];
+    }
+    if (wifiCount < MAX_WIFI_NETWORKS)
+      wifiCount++;
+  }
+
+  savedWiFi[0].ssid = ssid;
+  savedWiFi[0].pass = pass;
+
+  // Persist
+  preferences.begin("wifi-store", false);
+  preferences.putInt("count", wifiCount);
+  for (int i = 0; i < wifiCount; i++) {
+    preferences.putString(("s" + String(i)).c_str(), savedWiFi[i].ssid);
+    preferences.putString(("p" + String(i)).c_str(), savedWiFi[i].pass);
+  }
+  preferences.end();
+}
 
 bool tryConnect(String ssid, String pass) {
   log("Connecting to: " + ssid);
@@ -261,7 +266,7 @@ void ensureWiFi() {
   if (isConnected && !wasConnected) {
     log("WiFi Connected");
     playSound(SND_CONNECTED);
-    digitalWrite(LED_PIN, LOW);
+    digitalWrite(LED_PIN, LOW); // Ensure LED is OFF on connection
     esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
   } else if (!isConnected && wasConnected) {
     log("Lost connection");
@@ -296,7 +301,8 @@ void handleRoot() {
       "h1 { color: #f7ff00; font-weight: 800; "
       "margin-bottom: 30px; font-size: 2.5rem; text-transform: uppercase; }"
       "h2 { color: #ffffff; font-weight: 400; font-size: 1.2rem; margin-top: "
-      "-25px; margin-bottom: 30px; opacity: 0.8; }"
+      "-25px; "
+      "margin-bottom: 30px; opacity: 0.8; }"
       ".card { background: rgba(255, 255, 255, 0.05); backdrop-filter: "
       "blur(10px); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: "
       "20px; padding: 30px; width: 100%; max-width: 400px; box-shadow: 0 20px "
@@ -331,15 +337,20 @@ void handleRoot() {
       "<div class='card' style='padding: 0; overflow: hidden; border-radius: 12px;'>"
       "<div id='net-list'>";
 
-  WiFi.disconnect();
+  WiFi.disconnect(); // Ensure we are not trying to connect while scanning
   int n = WiFi.scanNetworks();
   if (n == 0) {
     html += "<p>No networks found.</p>";
   } else {
     for (int i = 0; i < n; ++i) {
-      html += "<div class='net-item' onclick='selectNet(\"" + WiFi.SSID(i) + "\")'>"
-              "<span class='ssid'>" + WiFi.SSID(i) + "</span>"
-              "<span class='rssi'>" + String(WiFi.RSSI(i)) + " dBm</span>"
+      html += "<div class='net-item' onclick='selectNet(\"" + WiFi.SSID(i) +
+              "\")'>"
+              "<span class='ssid'>" +
+              WiFi.SSID(i) +
+              "</span>"
+              "<span class='rssi'>" +
+              String(WiFi.RSSI(i)) +
+              " dBm</span>"
               "</div>";
     }
   }
@@ -376,6 +387,7 @@ void handleConnect() {
   ssid.trim();
   pass.trim();
 
+  // Show connecting page
   String html =
       "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>"
       "<style>body { background: #0a0e17; color: #fff; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }"
@@ -386,8 +398,9 @@ void handleConnect() {
       "</div></body></html>";
   server.send(200, "text/html", html);
 
-  delay(1000);
+  delay(1000); // small delay before attempting connection
   if (tryConnect(ssid, pass)) {
+    // Show success page
     html =
         "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>"
         "<style>body { background: #0a0e17; color: #f7ff00; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }"
@@ -400,16 +413,18 @@ void handleConnect() {
         "<script>setTimeout(function(){ window.close(); }, 3000);</script>"
         "</body></html>";
     server.send(200, "text/html", html);
-
+    
     log("Connected! Closing AP mode in 2 seconds...");
-    delay(2000);
+    delay(2000); // Let user see the success message and hear the sound
 
+    // Close AP mode and switch to STA
     isConfigMode = false;
     WiFi.softAPdisconnect(true);
     log("Switching to STA mode");
   } else {
+    // Failed to connect
     log("Failed to connect, showing failure page");
-    WiFi.disconnect();
+    WiFi.disconnect(); // Explicitly disconnect to clean up
     playSound(SND_NO_WIFI);
 
     html =
@@ -435,7 +450,7 @@ void handleRedirect() {
 }
 
 IPAddress apIP(192, 168, 4, 1);
-IPAddress gateway(192, 168, 4, 1);
+IPAddress gateway(192, 168, 4, 1);  // Typically same as AP IP
 IPAddress subnet(255, 255, 255, 0);
 
 void startCaptivePortal() {
@@ -443,16 +458,29 @@ void startCaptivePortal() {
   isConfigMode = true;
   WiFi.mode(WIFI_AP);
 
+  // Set static AP IP
   if (!WiFi.softAPConfig(apIP, gateway, subnet)) {
-    log("Failed to configure AP IP!");
+      log("Failed to configure AP IP!");
   }
 
-  WiFi.softAP("Padel Push Device - " + DEVICEID, "", 1, false, 4);
+  String shortId;
+  if (DEVICEID.length() >= 4) {
+    shortId = DEVICEID.substring(DEVICEID.length() - 4);
+  } else {
+    shortId = DEVICEID; // fallback if somehow shorter than 4 chars
+  }
+  String apName = "Padel Push | Beacon Basic - " + shortId;
+  log(apName);
+  WiFi.softAP(apName, "", 1, false, 4);
 
+  // Start DNS server to redirect all requests to ESP
   dnsServer.start(53, "*", WiFi.softAPIP());
 
+  // Setup web server routes
   server.on("/", HTTP_GET, handleRoot);
   server.on("/connect", HTTP_POST, handleConnect);
+
+  // Standard captive portal routes - Redirect to root to trigger portal popup
   server.on("/generate_204", handleRedirect);
   server.on("/hotspot-detect.html", handleRedirect);
   server.on("/connecttest.txt", handleRedirect);
@@ -462,90 +490,12 @@ void startCaptivePortal() {
     server.sendHeader("Location", "/", true);
     server.send(302, "text/plain", "");
   });
-
+  
   server.begin();
 
-  log("AP IP: " + WiFi.softAPIP().toString());
+  log(WiFi.softAPIP().toString());
+
   playSound(SND_NO_WIFI);
-}
-
-void sendEvent(EVENT event) {
-  if (WiFi.status() != WL_CONNECTED)
-    return;
-
-  char payload[PAYLOAD_BUFFER_SIZE];
-  snprintf(payload, sizeof(payload),
-           "{\"deviceId\":\"%s\",\"eventType\":\"%s\"}", DEVICEID.c_str(),
-           event);
-
-  for (int i = 0; i < 2; i++) {
-    client.setInsecure();
-
-    HTTPClient https;
-    https.setConnectTimeout(HTTPS_CONNECT_TIMEOUT);
-    https.setTimeout(HTTPS_RESPONSE_TIMEOUT);
-    https.begin(client, POSTEVENT_ENDPOINT);
-    https.addHeader("Content-Type", "application/json");
-
-    log("\nEvent: \n" + String(event) + "\nEndpoint: \n" + POSTEVENT_ENDPOINT +
-        "\nPayload: \n" + payload);
-
-    int code = https.POST(payload);
-
-    log("\nResponse Code: \n" + String(code) + "\nResponse Message: \n" +
-        https.getString());
-
-    https.end();
-
-    if (code >= 200 && code < 300)
-      return;
-
-    delay(POST_RETRY_INTERVAL);
-  }
-
-  playSound(SND_HTTP_POST_FAILED);
-}
-
-char readTeamSwitch() {
-  bool aSelected = digitalRead(TEAM_A_PIN) == LOW;
-  bool bSelected = digitalRead(TEAM_B_PIN) == LOW;
-
-  if (aSelected && !bSelected)
-    return 'A';
-  if (bSelected && !aSelected)
-    return 'B';
-
-  return 'A';
-}
-
-float measureDistanceCm() {
-  digitalWrite(TRIG_PIN, LOW);
-  delayMicroseconds(2);
-  digitalWrite(TRIG_PIN, HIGH);
-  delayMicroseconds(10);
-  digitalWrite(TRIG_PIN, LOW);
-
-  unsigned long duration = pulseIn(ECHO_PIN, HIGH, 30000);
-  if (duration == 0)
-    return -1.0;
-
-  return (duration * 0.0343) / 2.0;
-}
-
-void addPoint() {
-  if (WiFi.status() != WL_CONNECTED) {
-    playSound(SND_NO_WIFI);
-    return;
-  }
-
-  char team = readTeamSwitch();
-  playSound(SND_ADD_POINT);
-  sendEvent(team == 'A' ? EVENT_POINT_TEAM_A : EVENT_POINT_TEAM_B);
-}
-
-void log(String s) {
-  if (DEBUG)
-    Serial.println(s);
 }
 
 void setup() {
@@ -557,14 +507,13 @@ void setup() {
   if (UNDERCLOCK)
     setCpuFrequencyMhz(80);
 
-  pinMode(LED_PIN, OUTPUT);
-  pinMode(BUZZER_PIN, OUTPUT);
-
   pinMode(TRIG_PIN, OUTPUT);
   pinMode(ECHO_PIN, INPUT);
-
+  pinMode(LED_PIN, OUTPUT);
   pinMode(TEAM_A_PIN, INPUT_PULLUP);
   pinMode(TEAM_B_PIN, INPUT_PULLUP);
+
+  digitalWrite(TRIG_PIN, LOW);
 
   loadWiFiList();
 
@@ -574,7 +523,7 @@ void setup() {
   sprintf(baseMacChr, "%02X:%02X:%02X:%02X:%02X:%02X", baseMac[0], baseMac[1],
           baseMac[2], baseMac[3], baseMac[4], baseMac[5]);
   DEVICEID = String(baseMacChr);
-  DEVICEID.replace(":", "");
+  DEVICEID.replace(":", ""); // Clean device ID
 
   log("Device ID: " + DEVICEID);
 
@@ -585,39 +534,58 @@ void setup() {
   }
 }
 
-void loop() {
+void loop() {  
+  updateSound();
+
   if (isConfigMode) {
     dnsServer.processNextRequest();
     server.handleClient();
 
+    // Flash LED in config mode
     unsigned long now = millis();
     if (now - lastStatusFlash > 500) {
       lastStatusFlash = now;
       statusLedState = !statusLedState;
       digitalWrite(LED_PIN, statusLedState);
     }
-  } else {
+  } 
+  else {
     ensureWiFi();
   }
 
-  updateSound();
+  if (WiFi.status() != WL_CONNECTED) {
+    return;
+  }
 
   static unsigned long lastDistanceSample = 0;
   static bool hasTriggered = false;
-
   unsigned long now = millis();
-  if (now - lastDistanceSample >= DISTANCE_SAMPLE_INTERVAL) {
+
+  if (now - lastDistanceSample >= DISTANCE_SAMPLE_INTERVAL_MS) {
     lastDistanceSample = now;
-    float distance = measureDistanceCm();
-    log(distance);
-    bool objectDetected = (distance > 0 && distance <= DISTANCE_THRESHOLD_CM);
-    bool objectCleared = (distance < 0 || distance > DISTANCE_THRESHOLD_CM + DISTANCE_HYSTERESIS_CM);
+
+    distance_cm = measureDistance_cm();
+    if (DEBUG){
+      if (distance_cm < 0) {
+        log("No reading...");
+      }
+      else {
+        log("Distance: " + String((int)distance_cm) + " cm");
+      }
+    }
+
+    bool objectDetected = (distance_cm > 0 && distance_cm <= DISTANCE_THRESHOLD_CM);
+    bool objectCleared = (distance_cm < 0 || distance_cm > DISTANCE_THRESHOLD_CM + DISTANCE_HYSTERESIS_CM);
 
     if (objectDetected && !hasTriggered) {
-      addPoint();
       hasTriggered = true;
-    } else if (objectCleared) {
+      digitalWrite(LED_PIN, HIGH);
+      playSound(SND_ADD_POINT);
+      log("Team selection: " + getSelectedTeam());
+    } 
+    else if (objectCleared) {
       hasTriggered = false;
+      digitalWrite(LED_PIN, LOW);
     }
   }
 }
