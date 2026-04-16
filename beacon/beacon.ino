@@ -13,6 +13,7 @@ const bool UNDERCLOCK = false;
 const int DISTANCE_THRESHOLD_CM = 10;
 const int DISTANCE_HYSTERESIS_CM = 10;
 const unsigned long DISTANCE_SAMPLE_INTERVAL_MS = 300;
+const int DETECTION_DEBOUNCE_MS = 3000;
 const int ECHO_TIMEOUT = 30000;
 
 const int TRIG_PIN = 5;
@@ -27,6 +28,7 @@ const int TEAM_B_PIN = 2;
 
 long detection_duration;
 float distance_cm;
+unsigned long lastDetectionTime = 0;
 
 Preferences preferences;
 DNSServer dnsServer;
@@ -578,10 +580,13 @@ void loop() {
     bool objectCleared = (distance_cm < 0 || distance_cm > DISTANCE_THRESHOLD_CM + DISTANCE_HYSTERESIS_CM);
 
     if (objectDetected && !hasTriggered) {
-      hasTriggered = true;
-      digitalWrite(LED_PIN, HIGH);
-      playSound(SND_ADD_POINT);
-      log("Team selection: " + getSelectedTeam());
+      if (now - lastDetectionTime > DETECTION_DEBOUNCE_MS) {
+        lastDetectionTime = now;
+        hasTriggered = true;
+        digitalWrite(LED_PIN, HIGH);
+        playSound(SND_ADD_POINT);      
+        log("Add Point, Team: " + getSelectedTeam());
+      }    
     } 
     else if (objectCleared) {
       hasTriggered = false;
