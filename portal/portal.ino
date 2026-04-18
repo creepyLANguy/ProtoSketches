@@ -183,28 +183,28 @@ Sound SND_HTTP_FAIL_OBJ = {{{BUZZER_TONE_CLICK / 2, 200, 200},
                            3};
 
 Sound SND_FACTORY_RESET_DEVICE_OBJ = {{{BUZZER_TONE_CLICK, 50, 20},
-                                {BUZZER_TONE_CLICK * 0.8, 50, 20},
-                                {BUZZER_TONE_CLICK * 0.6, 50, 20},
-                                {BUZZER_TONE_CLICK * 0.4, 50, 20},
-                                {BUZZER_TONE_CLICK * 0.2, 50, 20},
-                                {BUZZER_TONE_CLICK * 0.1, 100, 0}},
-                               6};
+                                       {BUZZER_TONE_CLICK * 0.8, 50, 20},
+                                       {BUZZER_TONE_CLICK * 0.6, 50, 20},
+                                       {BUZZER_TONE_CLICK * 0.4, 50, 20},
+                                       {BUZZER_TONE_CLICK * 0.2, 50, 20},
+                                       {BUZZER_TONE_CLICK * 0.1, 100, 0}},
+                                      6};
 
 Sound SND_REGISTER_DEVICE_OBJ = {{{BUZZER_TONE_CLICK, 50, 20},
-                                        {BUZZER_TONE_CLICK * 1.2, 50, 20,
-                                        {BUZZER_TONE_CLICK * 1.5, 50, 20}},
-                                       3};
+                                  {BUZZER_TONE_CLICK * 1.2, 50, 20},
+                                  {BUZZER_TONE_CLICK * 1.5, 50, 20}},
+                                 3};
 
 Sound SND_REGISTER_DEVICE_IMPOSSIBLE_OBJ = {{{BUZZER_TONE_CLICK, 100, 20},
                                              {BUZZER_TONE_CLICK / 3, 100, 20},
                                              {BUZZER_TONE_CLICK / 6, 300, 20}},
                                             3};
 
-Sound SND_RESET_SCORE = {{{BUZZER_TONE_CLICK * 2, 100, 20},
-                        {BUZZER_TONE_CLICK / 2, 100, 20},
-                        {BUZZER_TONE_CLICK * 2, 100, 20},
-                        {BUZZER_TONE_CLICK / 2, 100, 20},
-                       4};
+Sound SND_RESET_SCORE_OBJ = {{{BUZZER_TONE_CLICK * 2, 100, 20},
+                              {BUZZER_TONE_CLICK / 2, 100, 20},
+                              {BUZZER_TONE_CLICK * 2, 100, 20},
+                              {BUZZER_TONE_CLICK / 2, 100, 20}},
+                             4};
 
 Sound currentSound;
 int soundIndex = 0;
@@ -228,18 +228,19 @@ void playSound(SOUNDS sound) {
   case SND_UNDO:
     startSound(SND_UNDO_OBJ);
     break;
-  case SND_FACTORY_RESET:
-    startSound(SND_FACTORY_RESET_OBJ);
+  case SND_FACTORY_RESET_DEVICE:
+    startSound(SND_FACTORY_RESET_DEVICE_OBJ);
     break;
   case SND_REGISTER_DEVICE:
     startSound(SND_REGISTER_DEVICE_OBJ);
-    break
-  case SND_REGISTER_DEVICE_FAIL:
-    startSound(SND_REGISTER_DEVICE_FAIL_OBJ);
-    break
-  case SSND_RESET_SCORE:
+    break;
+  case SND_REGISTER_DEVICE_IMPOSSIBLE:
+    startSound(SND_REGISTER_DEVICE_IMPOSSIBLE_OBJ);
+    break;
+  case SND_RESET_SCORE:
     startSound(SND_RESET_SCORE_OBJ);
     break;
+  }
 }
 
 void startSound(Sound& sound) {
@@ -628,7 +629,6 @@ void setup() {
     setCpuFrequencyMhz(80);
 
   pinMode(LED_PIN, OUTPUT);
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(BUZZER_PIN, OUTPUT);
 
   loadWiFiList();
