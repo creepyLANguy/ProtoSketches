@@ -10,6 +10,8 @@
 const bool DEBUG = true;
 const bool UNDERCLOCK = false;
 
+const String deviceSKU = "Pulse Mini";
+
 const String FIREBASE_PROJECT = "punto-8888";
 const String FIREBASE_APIKEY = "AIzaSyA6sA_c3yNUZvvo_dZanhydLn7jXl-55hU";
 
@@ -26,6 +28,10 @@ struct WiFiCreds {
   String pass;
 };
 
+IPAddress apIP(192, 168, 4, 1);
+IPAddress gateway(192, 168, 4, 1);
+IPAddress subnet(255, 255, 255, 0);
+
 const int MAX_WIFI_NETWORKS = 5;
 WiFiCreds savedWiFi[MAX_WIFI_NETWORKS];
 int wifiCount = 0;
@@ -39,32 +45,6 @@ String DEVICEID = "";
 char currentTeam = 'A';
 
 typedef const char *EVENT;
-
-enum SOUNDS {
-  SND_CONNECTED,
-  SND_NO_WIFI,
-  SND_HTTP_POST_FAILED,
-  SND_ADD_POINT,
-  SND_UNDO,
-  SND_SWITCH_TEAM,
-  SND_FACTORY_RESET,
-};
-
-struct SoundStep {
-  double freq;
-  double duration;
-  double pauseAfter;
-};
-
-#define MAX_STEPS 10
-
-struct Sound {
-  SoundStep steps[MAX_STEPS];
-  int length;
-};
-
-const int BUZZER_TONE_CLICK = 3000;
-const int BUZZER_DURATION = 200;
 
 const int DEBOUNCE_TIME = 50;
 const int PRESS_COOLDOWN = 500;
@@ -92,11 +72,6 @@ String POSTEVENT_ENDPOINT = "https://" + REGION + "-" + FIREBASE_PROJECT +
 const EVENT EVENT_POINT_TEAM_A = "POINT_TEAM_A";
 const EVENT EVENT_POINT_TEAM_B = "POINT_TEAM_B";
 const EVENT EVENT_UNDO = "UNDO";
-
-Sound currentSound;
-int soundIndex = 0;
-unsigned long soundStart = 0;
-bool isPlayingSound = false;
 
 void loadWiFiList() {
   preferences.begin("wifi-store", true);
@@ -158,40 +133,39 @@ void saveCurrentTeam(char team) {
   preferences.end();
 }
 
-void startSound(Sound &sound) {
-  currentSound = sound;
-  soundIndex = 0;
-  soundStart = millis();
-  isPlayingSound = true;
-
-  tone(BUZZER_PIN, (int)sound.steps[0].freq, (int)sound.steps[0].duration);
-}
-
-void updateSound() {
-  if (!isPlayingSound)
-    return;
-
-  unsigned long now = millis();
-  SoundStep step = currentSound.steps[soundIndex];
-
-  if (now - soundStart >= (step.duration + step.pauseAfter)) {
-    soundIndex++;
-
-    if (soundIndex >= currentSound.length) {
-      isPlayingSound = false;
-      noTone(BUZZER_PIN);
-      return;
-    }
-
-    soundStart = now;
-    SoundStep next = currentSound.steps[soundIndex];
-    tone(BUZZER_PIN, (int)next.freq, (int)next.duration);
-  }
-}
-
 // ==========================
 // 🔊 SOUND DEFINITIONS
 // ==========================
+
+enum SOUNDS {
+  SND_CONNECTED,
+  SND_NO_WIFI,
+  SND_HTTP_POST_FAILED,
+  SND_ADD_POINT,
+  SND_UNDO,
+  SND_SWITCH_TEAM,
+  SND_FACTORY_RESET,
+};
+
+struct SoundStep {
+  double freq;
+  double duration;
+  double pauseAfter;
+};
+
+const int MAX_SOUND_STEPS = 10;
+
+struct Sound {
+  SoundStep steps[MAX_SOUND_STEPS];
+  int length;
+};
+
+void playSound(SOUNDS sound);
+void startSound(Sound& sound);
+void updateSound();
+
+const int BUZZER_TONE_CLICK = 3000;
+const int BUZZER_DURATION = 200;
 
 Sound SND_ADD_POINT_OBJ = {{{BUZZER_TONE_CLICK, BUZZER_DURATION, 0}}, 1};
 
@@ -232,6 +206,11 @@ Sound SND_FACTORY_RESET_OBJ = {{{BUZZER_TONE_CLICK, 50, 20},
                                 {BUZZER_TONE_CLICK * 0.1, 100, 0}},
                                6};
 
+Sound currentSound;
+int soundIndex = 0;
+unsigned long soundStart = 0;
+bool isPlayingSound = false;
+
 void playSound(SOUNDS sound) {
   switch (sound) {
   case SND_CONNECTED:
@@ -255,6 +234,36 @@ void playSound(SOUNDS sound) {
   case SND_FACTORY_RESET:
     startSound(SND_FACTORY_RESET_OBJ);
     break;
+  }
+}
+
+void startSound(Sound& sound) {
+  currentSound = sound;
+  soundIndex = 0;
+  soundStart = millis();
+  isPlayingSound = true;
+  tone(BUZZER_PIN, (int)sound.steps[0].freq, (int)sound.steps[0].duration);
+}
+
+void updateSound() {
+  if (!isPlayingSound)
+    return;
+
+  unsigned long now = millis();
+  SoundStep step = currentSound.steps[soundIndex];
+
+  if (now - soundStart >= (step.duration + step.pauseAfter)) {
+    soundIndex++;
+
+    if (soundIndex >= currentSound.length) {
+      isPlayingSound = false;
+      noTone(BUZZER_PIN);
+      return;
+    }
+
+    soundStart = now;
+    SoundStep next = currentSound.steps[soundIndex];
+    tone(BUZZER_PIN, (int)next.freq, (int)next.duration);
   }
 }
 
@@ -482,10 +491,6 @@ void handleRedirect() {
   server.send(302, "text/plain", "");
 }
 
-IPAddress apIP(192, 168, 4, 1);
-IPAddress gateway(192, 168, 4, 1);  // Typically same as AP IP
-IPAddress subnet(255, 255, 255, 0);
-
 void startCaptivePortal() {
   log("Starting Captive Portal...");
   isConfigMode = true;
@@ -502,7 +507,7 @@ void startCaptivePortal() {
   } else {
     shortId = DEVICEID; // fallback if somehow shorter than 4 chars
   }
-  String apName = "Padel Push | Beacon Basic - " + shortId;
+  String apName = "Padel Push | " + deviceSKU + " - " + shortId;
   log(apName);
   WiFi.softAP(apName, "", 1, false, 4);
 

@@ -10,6 +10,8 @@
 const bool DEBUG = true;
 const bool UNDERCLOCK = false;
 
+const String deviceSKU = "Beacon Basic";
+
 const String FIREBASE_PROJECT = "punto-8888";
 const String FIREBASE_APIKEY = "AIzaSyA6sA_c3yNUZvvo_dZanhydLn7jXl-55hU";
 
@@ -42,6 +44,10 @@ struct WiFiCreds {
   String pass;
 };
 
+IPAddress apIP(192, 168, 4, 1);
+IPAddress gateway(192, 168, 4, 1);
+IPAddress subnet(255, 255, 255, 0);
+
 const int WIFI_RETRY_INTERVAL = 5000;
 static bool wasConnected = false;
 unsigned long lastWiFiAttempt = 0;
@@ -57,6 +63,24 @@ unsigned long lastStatusFlash = 0;
 bool statusLedState = false;
 
 String DEVICEID = "";
+
+const uint16_t HTTPS_CONNECT_TIMEOUT = 2000;
+const uint16_t HTTPS_RESPONSE_TIMEOUT = 3000;
+const int POST_RETRY_INTERVAL = 250;
+const int PAYLOAD_BUFFER_SIZE = 256;
+
+String REGION = "africa-south1";
+String POSTEVENT_ENDPOINT = "https://" + REGION + "-" + FIREBASE_PROJECT +
+                            ".cloudfunctions.net/postEvent";
+
+typedef const char *EVENT;
+const EVENT EVENT_POINT_TEAM_A = "POINT_TEAM_A";
+const EVENT EVENT_POINT_TEAM_B = "POINT_TEAM_B";
+const EVENT EVENT_UNDO = "UNDO";
+
+// ==========================
+// 🔊 SOUND DEFINITIONS
+// ==========================
 
 enum SOUNDS {
   SND_CONNECTED,
@@ -78,29 +102,56 @@ struct Sound {
   int length;
 };
 
+void playSound(SOUNDS sound);
+void startSound(Sound& sound);
+void updateSound();
+
 const int BUZZER_TONE = 3000;
 const int BUZZER_DURATION = 200;
+
+Sound SND_ADD_POINT_OBJ = {{{BUZZER_TONE, BUZZER_DURATION, }}, 1};
+
+Sound SND_CONNECTED_OBJ = {{{BUZZER_TONE / 4, 80, 50},
+                            {BUZZER_TONE / 3, 100, 50},
+                            {BUZZER_TONE / 2, 120, 0}},
+                           3};
+
+Sound SND_NO_WIFI_OBJ = {{{BUZZER_TONE / 2, 80, 50},
+                          {BUZZER_TONE / 3, 80, 50},
+                          {BUZZER_TONE / 4, 80, 50},
+                          {BUZZER_TONE / 2, 80, 50},
+                          {BUZZER_TONE / 3, 80, 50},
+                          {BUZZER_TONE / 4, 80, 0}},
+                         6};
+
+Sound SND_HTTP_FAIL_OBJ = {{{BUZZER_TONE / 2, 200, 200},
+                            {BUZZER_TONE / 2, 200, 200},
+                            {BUZZER_TONE / 2, 400, 0}},
+                           3};
 
 Sound currentSound;
 int soundIndex = 0;
 unsigned long soundStart = 0;
 bool isPlayingSound = false;
 
-const uint16_t HTTPS_CONNECT_TIMEOUT = 2000;
-const uint16_t HTTPS_RESPONSE_TIMEOUT = 3000;
-const int POST_RETRY_INTERVAL = 250;
-const int PAYLOAD_BUFFER_SIZE = 256;
+void playSound(SOUNDS sound) {
+  switch (sound) {
+  case SND_CONNECTED:
+    startSound(SND_CONNECTED_OBJ);
+    break;
+  case SND_NO_WIFI:
+    startSound(SND_NO_WIFI_OBJ);
+    break;
+  case SND_HTTP_POST_FAILED:
+    startSound(SND_HTTP_FAIL_OBJ);
+    break;
+  case SND_ADD_POINT:
+    startSound(SND_ADD_POINT_OBJ);
+    break;
+  }
+}
 
-String REGION = "africa-south1";
-String POSTEVENT_ENDPOINT = "https://" + REGION + "-" + FIREBASE_PROJECT +
-                            ".cloudfunctions.net/postEvent";
-
-typedef const char *EVENT;
-const EVENT EVENT_POINT_TEAM_A = "POINT_TEAM_A";
-const EVENT EVENT_POINT_TEAM_B = "POINT_TEAM_B";
-const EVENT EVENT_UNDO = "UNDO";
-
-void startSound(Sound &sound) {
+void startSound(Sound& sound) {
   currentSound = sound;
   soundIndex = 0;
   soundStart = millis();
@@ -127,47 +178,6 @@ void updateSound() {
     soundStart = now;
     SoundStep next = currentSound.steps[soundIndex];
     tone(BUZZER_PIN, (int)next.freq, (int)next.duration);
-  }
-}
-
-// ==========================
-// 🔊 SOUND DEFINITIONS
-// ==========================
-
-Sound SND_ADD_POINT_OBJ = {{{BUZZER_TONE, BUZZER_DURATION, }}, 1};
-
-Sound SND_CONNECTED_OBJ = {{{BUZZER_TONE / 4, 80, 50},
-                            {BUZZER_TONE / 3, 100, 50},
-                            {BUZZER_TONE / 2, 120, 0}},
-                           3};
-
-Sound SND_NO_WIFI_OBJ = {{{BUZZER_TONE / 2, 80, 50},
-                          {BUZZER_TONE / 3, 80, 50},
-                          {BUZZER_TONE / 4, 80, 50},
-                          {BUZZER_TONE / 2, 80, 50},
-                          {BUZZER_TONE / 3, 80, 50},
-                          {BUZZER_TONE / 4, 80, 0}},
-                         6};
-
-Sound SND_HTTP_FAIL_OBJ = {{{BUZZER_TONE / 2, 200, 200},
-                            {BUZZER_TONE / 2, 200, 200},
-                            {BUZZER_TONE / 2, 400, 0}},
-                           3};
-
-void playSound(SOUNDS sound) {
-  switch (sound) {
-  case SND_CONNECTED:
-    startSound(SND_CONNECTED_OBJ);
-    break;
-  case SND_NO_WIFI:
-    startSound(SND_NO_WIFI_OBJ);
-    break;
-  case SND_HTTP_POST_FAILED:
-    startSound(SND_HTTP_FAIL_OBJ);
-    break;
-  case SND_ADD_POINT:
-    startSound(SND_ADD_POINT_OBJ);
-    break;
   }
 }
 
@@ -468,10 +478,6 @@ void handleRedirect() {
   server.send(302, "text/plain", "");
 }
 
-IPAddress apIP(192, 168, 4, 1);
-IPAddress gateway(192, 168, 4, 1);  // Typically same as AP IP
-IPAddress subnet(255, 255, 255, 0);
-
 void startCaptivePortal() {
   log("Starting Captive Portal...");
   isConfigMode = true;
@@ -488,7 +494,7 @@ void startCaptivePortal() {
   } else {
     shortId = DEVICEID; // fallback if somehow shorter than 4 chars
   }
-  String apName = "Padel Push | Beacon Basic - " + shortId;
+  String apName = "Padel Push | " + deviceSKU + " - " + shortId;
   log(apName);
   WiFi.softAP(apName, "", 1, false, 4);
 
