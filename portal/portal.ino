@@ -120,18 +120,6 @@ void saveWiFi(String ssid, String pass) {
   preferences.end();
 }
 
-void loadCurrentTeam() {
-  preferences.begin("device-prefs", true);
-  currentTeam = (char)preferences.getInt("team", 'A');
-  preferences.end();
-}
-
-void saveCurrentTeam(char team) {
-  preferences.begin("device-prefs", false);
-  preferences.putInt("team", (int)team);
-  preferences.end();
-}
-
 // ==========================
 // 🔊 SOUND DEFINITIONS
 // ==========================
@@ -614,7 +602,6 @@ void factoryReset() {
   preferences.end();
 
   wifiCount = 0;
-  currentTeam = 'A';
 
   WiFi.disconnect(true, true);
   log("Storage cleared. Restarting...");
@@ -645,7 +632,6 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
 
   loadWiFiList();
-  loadCurrentTeam();
 
   // DEVICEID = WiFi.macAddress();
   uint8_t baseMac[6];
