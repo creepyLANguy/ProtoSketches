@@ -9,6 +9,8 @@
 #include <WebServer.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <SPI.h>
+#include <MFRC522.h>
 
 const bool DEBUG = true;
 const bool UNDERCLOCK = false;
@@ -18,8 +20,18 @@ const String deviceSKU = "Beacon Pro";
 const String FIREBASE_PROJECT = "punto-8888";
 const String FIREBASE_APIKEY = "AIzaSyA6sA_c3yNUZvvo_dZanhydLn7jXl-55hU";
 
-const int LED_PIN = 2;
-const int BUZZER_PIN = 4;
+const int LED_PIN = 0;
+const int BUZZER_PIN = 1;
+
+const int NFC_SS_PIN = 5;
+const int NFC_RST_PIN = 6;
+
+MFRC522 mfrc522(NFC_SS_PIN, NFC_RST_PIN);
+
+String lastTag = "";
+unsigned long lastTagTime = 0;
+const unsigned long TAG_COOLDOWN = 2000;
+
 
 Preferences preferences;
 DNSServer dnsServer;
@@ -43,6 +55,7 @@ unsigned long lastStatusFlash = 0;
 bool statusLedState = false;
 
 String DEVICEID = "";
+String currentCourtId = "";
 
 typedef const char *EVENT;
 
@@ -136,6 +149,7 @@ enum SOUNDS {
   SND_FACTORY_RESET_DEVICE,
   SND_REGISTER_DEVICE,
   SND_REGISTER_DEVICE_IMPOSSIBLE,
+  SND_UNKNOWN_TAG,
 };
 
 struct SoundStep {
@@ -206,6 +220,12 @@ Sound SND_RESET_SCORE_OBJ = {{{BUZZER_TONE_CLICK * 2, 100, 20},
                               {BUZZER_TONE_CLICK / 2, 100, 20}},
                              4};
 
+Sound SND_UNKNOWN_TAG_OBJ = {{{BUZZER_TONE_CLICK / 3, 20, 20},
+                              {BUZZER_TONE_CLICK / 3, 20, 20},
+                              {BUZZER_TONE_CLICK / 3, 20, 20},
+                              {BUZZER_TONE_CLICK / 3, 20, 20}},
+                             3};
+                             
 Sound currentSound;
 int soundIndex = 0;
 unsigned long soundStart = 0;
@@ -239,6 +259,9 @@ void playSound(SOUNDS sound) {
     break;
   case SND_RESET_SCORE:
     startSound(SND_RESET_SCORE_OBJ);
+    break;
+  case SND_UNKNOWN_TAG: 
+    startSound(SND_UNKNOWN_TAG_OBJ);
     break;
   }
 }
@@ -616,6 +639,70 @@ void log(String s) {
 }
 
 // ==========================
+// NFC
+// ==========================
+
+String readNFCTag() {
+  if (!mfrc522.PICC_IsNewCardPresent()) return "";
+  if (!mfrc522.PICC_ReadCardSerial()) return "";
+
+  String content = "";
+
+  for (byte i = 0; i < mfrc522.uid.size; i++) {
+    content += String(mfrc522.uid.uidByte[i], HEX);
+  }
+
+  content.toUpperCase();
+  return content;
+}
+
+bool isTagAllowed(String tag) {
+  unsigned long now = millis();
+
+  if (tag == lastTag && (now - lastTagTime < TAG_COOLDOWN)) {
+    return false;
+  }
+
+  lastTag = tag;
+  lastTagTime = now;
+  return true;
+}
+
+void handleNfcTag(String tag) {
+  log("NFC Tag: " + tag);
+
+  if (!isTagAllowed(tag)) {
+    log("Tag debounced.");
+    return;
+  }
+
+  if (tag == EVENT_POINT_TEAM_A) {
+    addPoint(EVENT_POINT_TEAM_A);
+  }
+  else if (tag == EVENT_POINT_TEAM_B) {
+    addPoint(EVENT_POINT_TEAM_B);
+  }
+  else if (tag == EVENT_UNDO) {
+    undo();
+  }
+  else if (tag == EVENT_RESET) {
+    //TODO - implement EVENT_RESET
+  }
+  else if (tag == EVENT_FACTORY_RESET_DEVICE) {
+    factoryReset();
+  }
+  else if (tag == EVENT_SPECTATE_COURT) {
+    currentCourtId = "COURT_" + tag; // TODO - implement EVENT_SPECTATE_COURT properly, with sound, etc
+  }
+  else if (tag == EVENT_REGISTER_DEVICE_TO_COURT) {
+    //TODO - implement EVENT_REGISTER_DEVICE_TO_COURT
+  }
+  else {
+    playSound(SND_UNKNOWN_TAG);
+  }
+}
+
+// ==========================
 // SETUP
 // ==========================
 
@@ -630,6 +717,9 @@ void setup() {
 
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
+
+  SPI.begin();
+  mfrc522.PCD_Init();
 
   loadWiFiList();
 
@@ -672,6 +762,11 @@ void loop() {
   }
 
   updateSound();
+
+  String tag = readNFCTag();
+  if (tag != "") {
+    handleNfcTag(tag);
+  }
 
 //AL.
 //TODO - implement nfc scanning 
