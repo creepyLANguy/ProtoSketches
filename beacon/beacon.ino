@@ -12,8 +12,8 @@ const bool UNDERCLOCK = false;
 
 const String deviceSKU = "Beacon Basic";
 
-const String FIREBASE_PROJECT = "punto-8888";
-const String FIREBASE_APIKEY = "AIzaSyA6sA_c3yNUZvvo_dZanhydLn7jXl-55hU";
+const String FIREBASE_PROJECT = "[PROJECT_ID]";
+const String FIREBASE_APIKEY = "[API_KEY]";
 
 const int DISTANCE_THRESHOLD_CM = 10;
 const int DISTANCE_HYSTERESIS_CM = 10;
@@ -194,8 +194,8 @@ float measureDistance_cm(){
 
   if (detection_duration == 0) {
     return -1;
-  } 
-  
+  }
+
   return (detection_duration * SOUND_SPEED) / 2;
 }
 
@@ -515,7 +515,7 @@ void startCaptivePortal() {
     server.sendHeader("Location", "/", true);
     server.send(302, "text/plain", "");
   });
-  
+
   server.begin();
 
   log(WiFi.softAPIP().toString());
@@ -604,7 +604,7 @@ void setup() {
   }
 }
 
-void loop() {  
+void loop() {
   updateSound();
 
   if (isConfigMode) {

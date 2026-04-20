@@ -17,8 +17,8 @@ const bool UNDERCLOCK = false;
 
 const String deviceSKU = "Beacon Pro";
 
-const String FIREBASE_PROJECT = "punto-8888";
-const String FIREBASE_APIKEY = "AIzaSyA6sA_c3yNUZvvo_dZanhydLn7jXl-55hU";
+const String FIREBASE_PROJECT = "[PROJECT_ID]";
+const String FIREBASE_APIKEY = "[API_KEY]";
 
 const int LED_PIN = 0;
 const int BUZZER_PIN = 1;
@@ -31,7 +31,6 @@ MFRC522 mfrc522(NFC_SS_PIN, NFC_RST_PIN);
 String lastTag = "";
 unsigned long lastTagTime = 0;
 const unsigned long TAG_COOLDOWN = 2000;
-
 
 Preferences preferences;
 DNSServer dnsServer;
@@ -225,7 +224,7 @@ Sound SND_UNKNOWN_TAG_OBJ = {{{BUZZER_TONE_CLICK / 3, 20, 20},
                               {BUZZER_TONE_CLICK / 3, 20, 20},
                               {BUZZER_TONE_CLICK / 3, 20, 20}},
                              3};
-                             
+
 Sound currentSound;
 int soundIndex = 0;
 unsigned long soundStart = 0;
@@ -260,7 +259,7 @@ void playSound(SOUNDS sound) {
   case SND_RESET_SCORE:
     startSound(SND_RESET_SCORE_OBJ);
     break;
-  case SND_UNKNOWN_TAG: 
+  case SND_UNKNOWN_TAG:
     startSound(SND_UNKNOWN_TAG_OBJ);
     break;
   }
@@ -557,11 +556,11 @@ void startCaptivePortal() {
     server.sendHeader("Location", "/", true);
     server.send(302, "text/plain", "");
   });
-  
+
   server.begin();
 
   log(WiFi.softAPIP().toString());
-  
+
   playSound(SND_NO_WIFI);
 }
 

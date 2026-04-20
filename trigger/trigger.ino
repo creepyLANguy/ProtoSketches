@@ -12,8 +12,8 @@ const bool UNDERCLOCK = false;
 
 const String deviceSKU = "Pulse Mini";
 
-const String FIREBASE_PROJECT = "punto-8888";
-const String FIREBASE_APIKEY = "AIzaSyA6sA_c3yNUZvvo_dZanhydLn7jXl-55hU";
+const String FIREBASE_PROJECT = "[PROJECT_ID]";
+const String FIREBASE_APIKEY = "[API_KEY]";
 
 const int LED_PIN = 2;
 const int BUTTON_PIN = 3;
@@ -416,9 +416,9 @@ void handleRoot() {
           "}"
           "function showList() {"
           "  document.getElementById('net-list').style.display = 'block';"
-          "  document.getElementById('config-form').style.display = 'none';"
-          "}"
-          "</script></body></html>";
+      "  document.getElementById('config-form').style.display = 'none';"
+      "}"
+      "</script></body></html>";
 
   server.send(200, "text/html", html);
 }
@@ -498,7 +498,7 @@ void startCaptivePortal() {
 
   // Set static AP IP
   if (!WiFi.softAPConfig(apIP, gateway, subnet)) {
-      log("Failed to configure AP IP!");
+    log("Failed to configure AP IP!");
   }
 
   String shortId;
@@ -528,11 +528,11 @@ void startCaptivePortal() {
     server.sendHeader("Location", "/", true);
     server.send(302, "text/plain", "");
   });
-  
+
   server.begin();
 
   log(WiFi.softAPIP().toString());
-  
+
   playSound(SND_NO_WIFI);
 }
 
