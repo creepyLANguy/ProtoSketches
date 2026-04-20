@@ -369,7 +369,7 @@ void handleRoot() {
   WiFi.disconnect(); // Ensure we are not trying to connect while scanning
   int n = WiFi.scanNetworks();
   if (n == 0) {
-    html += "<p>No networks found.</p>";
+    html += "<p style='padding: 20px;'>No networks found.</p>";
   } else {
     for (int i = 0; i < n; ++i) {
       html += "<div class='net-item' onclick='selectNet(\"" + WiFi.SSID(i) +
@@ -384,9 +384,12 @@ void handleRoot() {
     }
   }
 
-  html += "</div>"
+  html += "<div class='net-item' onclick='manualNet()' style='background: rgba(247, 255, 0, 0.05); border-top: 1px solid rgba(247, 255, 0, 0.2);'>"
+          "<span class='ssid' style='color: #f7ff00;'>+ Join Hidden Network</span>"
+          "</div>"
+          "</div>"
           "<form id='config-form' action='/connect' method='POST'>"
-          "<input type='hidden' id='ssid' name='ssid'>"
+          "<input type='text' id='ssid' name='ssid' placeholder='Network Name' style='display:none; margin-bottom: 10px;'>"
           "<div style='margin-bottom: 20px; font-weight: 600; color: #00f2ff;' id='selected-ssid'></div>"
           "<input type='password' name='pass' placeholder='Password'>"
           "<button type='submit'>Connect</button>"
@@ -397,7 +400,16 @@ void handleRoot() {
           "<script>"
           "function selectNet(ssid) {"
           "  document.getElementById('ssid').value = ssid;"
+          "  document.getElementById('ssid').style.display = 'none';"
           "  document.getElementById('selected-ssid').innerText = 'Network: ' + ssid;"
+          "  document.getElementById('selected-ssid').style.display = 'block';"
+          "  document.getElementById('net-list').style.display = 'none';"
+          "  document.getElementById('config-form').style.display = 'flex';"
+          "}"
+          "function manualNet() {"
+          "  document.getElementById('ssid').value = '';"
+          "  document.getElementById('ssid').style.display = 'block';"
+          "  document.getElementById('selected-ssid').style.display = 'none';"
           "  document.getElementById('net-list').style.display = 'none';"
           "  document.getElementById('config-form').style.display = 'flex';"
           "}"
