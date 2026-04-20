@@ -234,6 +234,7 @@ Sound currentSound;
 int soundIndex = 0;
 unsigned long soundStart = 0;
 bool isPlayingSound = false;
+bool hasPlayedNoWifiSound = false;
 
 void playSound(SOUNDS sound) {
   switch (sound) {
@@ -341,11 +342,18 @@ void ensureWiFi() {
   if (isConnected && !wasConnected) {
     log("WiFi Connected");
     playSound(SND_CONNECTED);
-    digitalWrite(LED_PIN, LOW); // Ensure LED is OFF on connection
-    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
-  } else if (!isConnected && wasConnected) {
+    digitalWrite(LED_PIN, LOW);
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);    
+    hasPlayedNoWifiSound = false;
+  } 
+  else if (!isConnected && wasConnected) {
     log("Lost connection");
-    playSound(SND_NO_WIFI);
+    
+    if (!hasPlayedNoWifiSound) {
+      playSound(SND_NO_WIFI);
+      hasPlayedNoWifiSound = true;
+    }
+
     esp_wifi_set_ps(WIFI_PS_NONE);
   }
 
@@ -583,8 +591,11 @@ void startCaptivePortal() {
 
 void sendEvent(EVENT event) {
   if (WiFi.status() != WL_CONNECTED)
+  {
+    playSound(SND_NO_WIFI);
     return;
-
+  }
+   
   char payload[PAYLOAD_BUFFER_SIZE];
   snprintf(payload, sizeof(payload),
            "{\"deviceId\":\"%s\",\"eventType\":\"%s\"}", DEVICEID.c_str(),
@@ -797,30 +808,9 @@ void loop() {
   updateSound();
 
   handleBootButton();
-
+   
   String tag = readNFCTag();
   if (tag != "") {
     handleNfcTag(tag);
   }
-
-//AL.
-//TODO - implement nfc scanning 
-
-//AL.
-//TODO - if event is a factory reset, handle immediately 
-
-//AL.
-//TODO - else there's no wifi, play sound and return
-// if (WiFi.status() != WL_CONNECTED) {
-//   playSound(SND_NO_WIFI);
-//   return;
-// }
-
-//AL.
-//TODO - else, if it's a request to register a device, only play normal sound if the courtId is not null or blank, else play the 'impossible' sound
-
-
-//AL.
-//TODO - else, process the event : ADD_POINT / UNDO / RESET / REGISTER_DEVICE
-
 }
