@@ -23,7 +23,7 @@ const String FIREBASE_APIKEY = "[API_KEY]";
 const int LED_PIN = 3;
 const int BUZZER_PIN = 4;
 
-const int BOOT_BUTTON_PIN = 9;   // ESP32-C3 boot button
+const int BOOT_BUTTON_PIN = 9;
 
 const int NFC_SS_PIN = 5;
 const int NFC_RST_PIN = 6;
@@ -654,69 +654,69 @@ void log(String s) {
     Serial.println(s);
 }
 
-// // ==========================
-// // NFC
-// // ==========================
+// ==========================
+// NFC
+// ==========================
 
-// String readNFCTag() {
-//   if (!mfrc522.PICC_IsNewCardPresent()) return "";
-//   if (!mfrc522.PICC_ReadCardSerial()) return "";
+String readNFCTag() {
+  if (!mfrc522.PICC_IsNewCardPresent()) return "";
+  if (!mfrc522.PICC_ReadCardSerial()) return "";
 
-//   String content = "";
+  String content = "";
 
-//   for (byte i = 0; i < mfrc522.uid.size; i++) {
-//     content += String(mfrc522.uid.uidByte[i], HEX);
-//   }
+  for (byte i = 0; i < mfrc522.uid.size; i++) {
+    content += String(mfrc522.uid.uidByte[i], HEX);
+  }
 
-//   content.toUpperCase();
-//   return content;
-// }
+  content.toUpperCase();
+  return content;
+}
 
-// bool isTagAllowed(String tag) {
-//   unsigned long now = millis();
+bool isTagAllowed(String tag) {
+  unsigned long now = millis();
 
-//   if (tag == lastTag && (now - lastTagTime < TAG_COOLDOWN)) {
-//     return false;
-//   }
+  if (tag == lastTag && (now - lastTagTime < TAG_COOLDOWN)) {
+    return false;
+  }
 
-//   lastTag = tag;
-//   lastTagTime = now;
-//   return true;
-// }
+  lastTag = tag;
+  lastTagTime = now;
+  return true;
+}
 
-// void handleNfcTag(String tag) {
-//   log("NFC Tag: " + tag);
+void handleNfcTag(String tag) {
+  log("NFC Tag: " + tag);
 
-//   if (!isTagAllowed(tag)) {
-//     log("Tag debounced.");
-//     return;
-//   }
+  if (!isTagAllowed(tag)) {
+    log("Tag debounced.");
+    return;
+  }
 
-//   if (tag == EVENT_POINT_TEAM_A) {
-//     addPoint(EVENT_POINT_TEAM_A);
-//   }
-//   else if (tag == EVENT_POINT_TEAM_B) {
-//     addPoint(EVENT_POINT_TEAM_B);
-//   }
-//   else if (tag == EVENT_UNDO) {
-//     undo();
-//   }
-//   else if (tag == EVENT_RESET) {
-//     //TODO - implement EVENT_RESET
-//   }
-//   else if (tag == EVENT_FACTORY_RESET_DEVICE) {
-//     factoryReset();
-//   }
-//   else if (tag == EVENT_SPECTATE_COURT) {
-//     currentCourtId = "COURT_" + tag; // TODO - implement EVENT_SPECTATE_COURT properly, with sound, etc
-//   }
-//   else if (tag == EVENT_REGISTER_DEVICE_TO_COURT) {
-//     //TODO - implement EVENT_REGISTER_DEVICE_TO_COURT
-//   }
-//   else {
-//     playSound(SND_UNKNOWN_TAG);
-//   }
-// }
+  if (tag == EVENT_POINT_TEAM_A) {
+    addPoint(EVENT_POINT_TEAM_A);
+  }
+  else if (tag == EVENT_POINT_TEAM_B) {
+    addPoint(EVENT_POINT_TEAM_B);
+  }
+  else if (tag == EVENT_UNDO) {
+    undo();
+  }
+  else if (tag == EVENT_RESET) {
+    //TODO - implement EVENT_RESET
+  }
+  else if (tag == EVENT_FACTORY_RESET_DEVICE) {
+    factoryReset();
+  }
+  else if (tag == EVENT_SPECTATE_COURT) {
+    currentCourtId = "COURT_" + tag; // TODO - implement EVENT_SPECTATE_COURT properly, with sound, etc
+  }
+  else if (tag == EVENT_REGISTER_DEVICE_TO_COURT) {
+    //TODO - implement EVENT_REGISTER_DEVICE_TO_COURT
+  }
+  else {
+    playSound(SND_UNKNOWN_TAG);
+  }
+}
 
 void handleBootButton() {
   if (digitalRead(BOOT_BUTTON_PIN) == LOW) {  
@@ -750,6 +750,7 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
   pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
 
+  //AL. //TODO - initialise nfc stuffs in setup()
   // SPI.begin();
   // mfrc522.PCD_Init();
 
@@ -797,10 +798,10 @@ void loop() {
 
   handleBootButton();
 
-  // String tag = readNFCTag();
-  // if (tag != "") {
-  //   handleNfcTag(tag);
-  // }
+  String tag = readNFCTag();
+  if (tag != "") {
+    handleNfcTag(tag);
+  }
 
 //AL.
 //TODO - implement nfc scanning 
