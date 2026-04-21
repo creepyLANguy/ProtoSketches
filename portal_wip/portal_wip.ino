@@ -97,7 +97,6 @@ void loadWiFiList() {
 }
 
 void saveWiFi(String ssid, String pass) {
-  // Check if already exists
   int existingIdx = -1;
   for (int i = 0; i < wifiCount; i++) {
     if (savedWiFi[i].ssid == ssid) {
@@ -106,12 +105,12 @@ void saveWiFi(String ssid, String pass) {
     }
   }
 
-  // Shift for MRU
   if (existingIdx != -1) {
     for (int i = existingIdx; i > 0; i--) {
       savedWiFi[i] = savedWiFi[i - 1];
     }
-  } else {
+  } 
+  else {
     int limit =
         (wifiCount < MAX_WIFI_NETWORKS) ? wifiCount : MAX_WIFI_NETWORKS - 1;
     for (int i = limit; i > 0; i--) {
@@ -124,7 +123,6 @@ void saveWiFi(String ssid, String pass) {
   savedWiFi[0].ssid = ssid;
   savedWiFi[0].pass = pass;
 
-  // Persist
   preferences.begin("wifi-store", false);
   preferences.putInt("count", wifiCount);
   for (int i = 0; i < wifiCount; i++) {
@@ -138,7 +136,7 @@ void saveWiFi(String ssid, String pass) {
 // 🔊 SOUND DEFINITIONS
 // ==========================
 
-//TODO - test all sounds.
+//TODO - test all sounds/scenarios.
 enum SOUNDS {
   SND_CONNECTED,
   SND_NO_WIFI,
@@ -358,7 +356,6 @@ void ensureWiFi() {
   if (isConnected)
     return;
 
-  //retryInterval = min(retryInterval * 2, 60000); //AL. TODO - verify if this retry time scaling is something we want to do.
   unsigned long now = millis();
   if (now - lastWiFiAttempt > wifi_retry_interval_ms) {
     lastWiFiAttempt = now;
@@ -417,7 +414,7 @@ void handleRoot() {
       "<div class='card' style='padding: 0; overflow: hidden; border-radius: 12px;'>"
       "<div id='net-list'>";
 
-  WiFi.disconnect(); // Ensure we are not trying to connect while scanning
+  WiFi.disconnect();
   int n = WiFi.scanNetworks();
   if (n == 0) {
     html += "<p style='padding: 20px;'>No networks found.</p>";
@@ -479,7 +476,6 @@ void handleConnect() {
   ssid.trim();
   pass.trim();
 
-  // Show connecting page
   String html =
       "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>"
       "<style>body { background: #0a0e17; color: #fff; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }"
@@ -490,9 +486,8 @@ void handleConnect() {
       "</div></body></html>";
   server.send(200, "text/html", html);
 
-  delay(1000); // small delay before attempting connection
+  delay(1000);
   if (tryConnect(ssid, pass)) {
-    // Show success page
     html =
         "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>"
         "<style>body { background: #0a0e17; color: #f7ff00; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }"
@@ -507,16 +502,15 @@ void handleConnect() {
     server.send(200, "text/html", html);
     
     log("Connected! Closing AP mode in 2 seconds...");
-    delay(2000); // Let user see the success message and hear the sound
+    delay(2000);
 
-    // Close AP mode and switch to STA
     isConfigMode = false;
     WiFi.softAPdisconnect(true);
     log("Switching to STA mode");
-  } else {
-    // Failed to connect
+  } 
+  else {
     log("Failed to connect, showing failure page");
-    WiFi.disconnect(); // Explicitly disconnect to clean up
+    WiFi.disconnect();
     playSound(SND_NO_WIFI);
 
     html =
@@ -546,7 +540,6 @@ void startCaptivePortal() {
   isConfigMode = true;
   WiFi.mode(WIFI_AP);
 
-  // Set static AP IP
   if (!WiFi.softAPConfig(apIP, gateway, subnet)) {
       log("Failed to configure AP IP!");
   }
@@ -561,14 +554,11 @@ void startCaptivePortal() {
   log(apName);
   WiFi.softAP(apName, "", 1, false, 4);
 
-  // Start DNS server to redirect all requests to ESP
   dnsServer.start(53, "*", WiFi.softAPIP());
 
-  // Setup web server routes
   server.on("/", HTTP_GET, handleRoot);
   server.on("/connect", HTTP_POST, handleConnect);
 
-  // Standard captive portal routes - Redirect to root to trigger portal popup
   server.on("/generate_204", handleRedirect);
   server.on("/hotspot-detect.html", handleRedirect);
   server.on("/connecttest.txt", handleRedirect);
@@ -647,7 +637,7 @@ void factoryReset() {
   playSound(SND_FACTORY_RESET_DEVICE);
   while (isPlayingSound) {
     updateSound();
-    delay(1); // small yield
+    delay(1);
   }
 
   preferences.begin("wifi-store", false);
@@ -741,7 +731,7 @@ void handleNfcTag(String tag) {
     registerDeviceToCourt(DEVICEID, currentCourtId);
   }
   else if (tag == EVENT_REGISTER_DEVICE_TO_COURT) {
-    //registerDeviceToCourt(); TODO - call function with correct params
+    //TODO - call registerDeviceToCourt();
   }
   else if (tag == EVENT_FACTORY_RESET_DEVICE) {
     factoryReset();
@@ -781,14 +771,13 @@ void setup() {
 
   loadWiFiList();
 
-  // DEVICEID = WiFi.macAddress();
   uint8_t baseMac[6];
   esp_read_mac(baseMac, ESP_MAC_BASE);
   char baseMacChr[18] = {0};
   sprintf(baseMacChr, "%02X:%02X:%02X:%02X:%02X:%02X", baseMac[0], baseMac[1],
           baseMac[2], baseMac[3], baseMac[4], baseMac[5]);
   DEVICEID = String(baseMacChr);
-  DEVICEID.replace(":", ""); // Clean device ID
+  DEVICEID.replace(":", "");
 
   log("Device ID: " + DEVICEID);
 
