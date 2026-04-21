@@ -109,25 +109,30 @@ void updateSound();
 const int BUZZER_TONE = 3000;
 const int BUZZER_DURATION = 200;
 
-Sound SND_ADD_POINT_OBJ = {{{BUZZER_TONE, BUZZER_DURATION, }}, 1};
+Sound SND_ADD_POINT_OBJ = {{
+  {BUZZER_TONE, BUZZER_DURATION, }}, 
+  1};
 
-Sound SND_CONNECTED_OBJ = {{{BUZZER_TONE / 4, 80, 50},
-                            {BUZZER_TONE / 3, 100, 50},
-                            {BUZZER_TONE / 2, 120, 0}},
-                           3};
+Sound SND_CONNECTED_OBJ = {{
+  {BUZZER_TONE / 4, 80, 50},
+  {BUZZER_TONE / 3, 100, 50},
+  {BUZZER_TONE / 2, 120, 0}},
+  3};
 
-Sound SND_NO_WIFI_OBJ = {{{BUZZER_TONE / 2, 80, 50},
-                          {BUZZER_TONE / 3, 80, 50},
-                          {BUZZER_TONE / 4, 80, 50},
-                          {BUZZER_TONE / 2, 80, 50},
-                          {BUZZER_TONE / 3, 80, 50},
-                          {BUZZER_TONE / 4, 80, 0}},
-                         6};
+Sound SND_NO_WIFI_OBJ = {{
+  {BUZZER_TONE / 2, 80, 50},
+  {BUZZER_TONE / 3, 80, 50},
+  {BUZZER_TONE / 4, 80, 50},
+  {BUZZER_TONE / 2, 80, 50},
+  {BUZZER_TONE / 3, 80, 50},
+  {BUZZER_TONE / 4, 80, 0}},
+  6};
 
-Sound SND_HTTP_FAIL_OBJ = {{{BUZZER_TONE / 2, 200, 200},
-                            {BUZZER_TONE / 2, 200, 200},
-                            {BUZZER_TONE / 2, 400, 0}},
-                           3};
+Sound SND_HTTP_FAIL_OBJ = {{
+  {BUZZER_TONE / 2, 200, 200},
+  {BUZZER_TONE / 2, 200, 200},
+  {BUZZER_TONE / 2, 400, 0}},
+  3};
 
 Sound currentSound;
 int soundIndex = 0;

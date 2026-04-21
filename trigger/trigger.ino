@@ -167,44 +167,51 @@ void updateSound();
 const int BUZZER_TONE_CLICK = 3000;
 const int BUZZER_DURATION = 200;
 
-Sound SND_ADD_POINT_OBJ = {{{BUZZER_TONE_CLICK, BUZZER_DURATION, 0}}, 1};
+Sound SND_ADD_POINT_OBJ = {{
+  {BUZZER_TONE_CLICK, BUZZER_DURATION, 0}}, 
+  1};
 
-Sound SND_UNDO_OBJ = {{{BUZZER_TONE_CLICK * 0.75, BUZZER_DURATION * 0.75, 50},
-                       {BUZZER_TONE_CLICK * 0.65, BUZZER_DURATION, 0}},
-                      2};
+Sound SND_UNDO_OBJ = {{
+  {BUZZER_TONE_CLICK * 0.75, BUZZER_DURATION * 0.75, 50},
+  {BUZZER_TONE_CLICK * 0.65, BUZZER_DURATION, 0}},
+  2};
 
 Sound SND_SWITCH_TEAM_OBJ = {
-    {{BUZZER_TONE_CLICK / 2, BUZZER_DURATION, 50},
-     {BUZZER_TONE_CLICK / 1.5, BUZZER_DURATION / 1.5, 50},
-     {BUZZER_TONE_CLICK / 2, BUZZER_DURATION, 50},
-     {BUZZER_TONE_CLICK / 1.5, BUZZER_DURATION / 1.5, 0}},
-    4};
+  {{BUZZER_TONE_CLICK / 2, BUZZER_DURATION, 50},
+  {BUZZER_TONE_CLICK / 1.5, BUZZER_DURATION / 1.5, 50},
+  {BUZZER_TONE_CLICK / 2, BUZZER_DURATION, 50},
+  {BUZZER_TONE_CLICK / 1.5, BUZZER_DURATION / 1.5, 0}},
+  4};
 
-Sound SND_CONNECTED_OBJ = {{{BUZZER_TONE_CLICK / 4, 80, 50},
-                            {BUZZER_TONE_CLICK / 3, 100, 50},
-                            {BUZZER_TONE_CLICK / 2, 120, 0}},
-                           3};
+Sound SND_CONNECTED_OBJ = {{
+  {BUZZER_TONE_CLICK / 4, 80, 50},
+  {BUZZER_TONE_CLICK / 3, 100, 50},
+  {BUZZER_TONE_CLICK / 2, 120, 0}},
+  3};
 
-Sound SND_NO_WIFI_OBJ = {{{BUZZER_TONE_CLICK / 2, 80, 50},
-                          {BUZZER_TONE_CLICK / 3, 80, 50},
-                          {BUZZER_TONE_CLICK / 4, 80, 50},
-                          {BUZZER_TONE_CLICK / 2, 80, 50},
-                          {BUZZER_TONE_CLICK / 3, 80, 50},
-                          {BUZZER_TONE_CLICK / 4, 80, 0}},
-                         6};
+Sound SND_NO_WIFI_OBJ = {{
+  {BUZZER_TONE_CLICK / 2, 80, 50},
+  {BUZZER_TONE_CLICK / 3, 80, 50},
+  {BUZZER_TONE_CLICK / 4, 80, 50},
+  {BUZZER_TONE_CLICK / 2, 80, 50},
+  {BUZZER_TONE_CLICK / 3, 80, 50},
+  {BUZZER_TONE_CLICK / 4, 80, 0}},
+  6};
 
-Sound SND_HTTP_FAIL_OBJ = {{{BUZZER_TONE_CLICK / 2, 200, 200},
-                            {BUZZER_TONE_CLICK / 2, 200, 200},
-                            {BUZZER_TONE_CLICK / 2, 400, 0}},
-                           3};
+Sound SND_HTTP_FAIL_OBJ = {{
+  {BUZZER_TONE_CLICK / 2, 200, 200},
+  {BUZZER_TONE_CLICK / 2, 200, 200},
+  {BUZZER_TONE_CLICK / 2, 400, 0}},
+  3};
 
-Sound SND_FACTORY_RESET_OBJ = {{{BUZZER_TONE_CLICK, 50, 20},
-                                {BUZZER_TONE_CLICK * 0.8, 50, 20},
-                                {BUZZER_TONE_CLICK * 0.6, 50, 20},
-                                {BUZZER_TONE_CLICK * 0.4, 50, 20},
-                                {BUZZER_TONE_CLICK * 0.2, 50, 20},
-                                {BUZZER_TONE_CLICK * 0.1, 100, 0}},
-                               6};
+Sound SND_FACTORY_RESET_OBJ = {{
+  {BUZZER_TONE_CLICK, 50, 20},
+  {BUZZER_TONE_CLICK * 0.8, 50, 20},
+  {BUZZER_TONE_CLICK * 0.6, 50, 20},
+  {BUZZER_TONE_CLICK * 0.4, 50, 20},
+  {BUZZER_TONE_CLICK * 0.2, 50, 20},
+  {BUZZER_TONE_CLICK * 0.1, 100, 0}},
+  6};
 
 Sound currentSound;
 int soundIndex = 0;
