@@ -1,6 +1,3 @@
-//AL.
-//TODO - see if can implement wifi power saving... 
-
 #include "esp_mac.h"
 #include "esp_wifi.h"
 #include <DNSServer.h>
@@ -26,13 +23,15 @@ const int BUZZER_PIN = 4;
 const int BOOT_BUTTON_PIN = 9;
 
 const int NFC_SS_PIN = 5;
-const int NFC_RST_PIN = 6;
+const int NFC_RST_PIN = 22;
 
 MFRC522 mfrc522(NFC_SS_PIN, NFC_RST_PIN);
 
 String lastTag = "";
 unsigned long lastTagTime = 0;
 const unsigned long TAG_COOLDOWN = 2000;
+unsigned long lastNfcCheck = 0;
+const int NFC_INTERVAL_MS = 100;
 
 bool bootButtonPressed = false;
 unsigned long bootButtonPressStart = 0;
@@ -63,7 +62,7 @@ String currentCourtId = "";
 
 typedef const char *EVENT;
 
-const int WIFI_RETRY_INTERVAL = 5000;
+int wifi_retry_interval_ms = 5000;
 static bool wasConnected = false;
 unsigned long lastWiFiAttempt = 0;
 
@@ -79,8 +78,6 @@ String REGION = "africa-south1";
 String POSTEVENT_ENDPOINT = "https://" + REGION + "-" + FIREBASE_PROJECT +
                             ".cloudfunctions.net/postEvent";
 
-//AL.
-//TODO - handle all events
 const EVENT EVENT_POINT_TEAM_A = "POINT_TEAM_A";
 const EVENT EVENT_POINT_TEAM_B = "POINT_TEAM_B";
 const EVENT EVENT_UNDO = "UNDO";
@@ -141,7 +138,6 @@ void saveWiFi(String ssid, String pass) {
 // 🔊 SOUND DEFINITIONS
 // ==========================
 
-//AL.
 //TODO - test all sounds.
 enum SOUNDS {
   SND_CONNECTED,
@@ -362,8 +358,9 @@ void ensureWiFi() {
   if (isConnected)
     return;
 
+  //retryInterval = min(retryInterval * 2, 60000); //AL. TODO - verify if this retry time scaling is something we want to do.
   unsigned long now = millis();
-  if (now - lastWiFiAttempt > WIFI_RETRY_INTERVAL) {
+  if (now - lastWiFiAttempt > wifi_retry_interval_ms) {
     lastWiFiAttempt = now;
     autoConnect();
   }
@@ -639,10 +636,19 @@ void addPoint(EVENT event) {
   sendEvent(event);
 }
 
-void undo() { sendEvent(EVENT_UNDO); }
+void undo() { 
+  playSound(SND_UNDO);
+  sendEvent(EVENT_UNDO); 
+}
 
 void factoryReset() {
   log("FACTORY RESET INITIATED");
+
+  playSound(SND_FACTORY_RESET_DEVICE);
+  while (isPlayingSound) {
+    updateSound();
+    delay(1); // small yield
+  }
 
   preferences.begin("wifi-store", false);
   preferences.clear();
@@ -658,6 +664,21 @@ void factoryReset() {
   log("Storage cleared. Restarting...");
   delay(1000);
   ESP.restart();
+}
+
+void resetScore() {
+  playSound(SND_RESET_SCORE);
+  //TODO - sendEvent(EVENT_RESET);
+}
+
+void registerDeviceToCourt(String deviceId, String courtId) {
+  if (currentCourtId == "") {
+    playSound(SND_REGISTER_DEVICE_IMPOSSIBLE);
+    return;
+  }
+
+  playSound(SND_REGISTER_DEVICE);
+  //TODO - sendEvent(EVENT_REGISTER_DEVICE_TO_COURT);
 }
 
 void log(String s) {
@@ -713,16 +734,17 @@ void handleNfcTag(String tag) {
     undo();
   }
   else if (tag == EVENT_RESET) {
-    //TODO - implement EVENT_RESET
+    resetScore();
+  }
+  else if (tag == EVENT_SPECTATE_COURT) {
+    currentCourtId = ""; //TODO - should be something in the tag - make sure aligns to backend courtid format 
+    registerDeviceToCourt(DEVICEID, currentCourtId);
+  }
+  else if (tag == EVENT_REGISTER_DEVICE_TO_COURT) {
+    //registerDeviceToCourt(); TODO - call function with correct params
   }
   else if (tag == EVENT_FACTORY_RESET_DEVICE) {
     factoryReset();
-  }
-  else if (tag == EVENT_SPECTATE_COURT) {
-    currentCourtId = "COURT_" + tag; // TODO - implement EVENT_SPECTATE_COURT properly, with sound, etc
-  }
-  else if (tag == EVENT_REGISTER_DEVICE_TO_COURT) {
-    //TODO - implement EVENT_REGISTER_DEVICE_TO_COURT
   }
   else {
     playSound(SND_UNKNOWN_TAG);
@@ -731,15 +753,7 @@ void handleNfcTag(String tag) {
 
 void handleBootButton() {
   if (digitalRead(BOOT_BUTTON_PIN) == LOW) {  
-    log("Factory reset triggered via BOOT button");
-
-    playSound(SND_FACTORY_RESET_DEVICE);
-
-    while (isPlayingSound) {
-      updateSound();
-      delay(1); // small yield
-    }
-
+    log("Factory reset triggered via BOOT button");  
     factoryReset();
   }
 }
@@ -761,7 +775,7 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
   pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
 
-  //AL. //TODO - initialise nfc stuffs in setup()
+  //TODO - initialise nfc stuffs in setup()
   // SPI.begin();
   // mfrc522.PCD_Init();
 
@@ -809,8 +823,11 @@ void loop() {
 
   handleBootButton();
    
-  String tag = readNFCTag();
-  if (tag != "") {
-    handleNfcTag(tag);
+  if (millis() - lastNfcCheck > NFC_INTERVAL_MS) {
+    lastNfcCheck = millis();
+    String tag = readNFCTag();
+    if (tag != "") {
+      handleNfcTag(tag);
+    }
   }
 }
