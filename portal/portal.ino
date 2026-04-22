@@ -7,7 +7,7 @@
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
 #include <SPI.h>
-#include <MFRC522.h>
+#include <Adafruit_PN532.h>
 
 const bool DEBUG = true;
 const bool UNDERCLOCK = false;
@@ -18,14 +18,17 @@ const String FIREBASE_PROJECT = "[PROJECT_ID]";
 const String FIREBASE_APIKEY = "[API_KEY]";
 
 const int LED_PIN = 3;
-const int BUZZER_PIN = 4;
+const int BUZZER_PIN = 2;
 
 const int BOOT_BUTTON_PIN = 9;
 
-const int NFC_SS_PIN = 5;
-const int NFC_RST_PIN = 22;
+const int NFC_SS_PIN = 7;
+const int NFC_RST_PIN = 1;
+const int SPI_SCK  4;
+const int SPI_MISO 5;
+const int SPI_MOSI 6;
 
-MFRC522 mfrc522(NFC_SS_PIN, NFC_RST_PIN);
+Adafruit_PN532 nfc(NFC_SS_PIN);
 
 String lastTag = "";
 unsigned long lastTagTime = 0;
@@ -706,13 +709,18 @@ void log(String s) {
 // ==========================
 
 String readNFCTag() {
-  if (!mfrc522.PICC_IsNewCardPresent()) return "";
-  if (!mfrc522.PICC_ReadCardSerial()) return "";
+  uint8_t success;
+  uint8_t uid[] = {0, 0, 0, 0, 0, 0, 0};
+  uint8_t uidLength;
+
+  success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength);
+
+  if (!success) return "";
 
   String content = "";
-
-  for (byte i = 0; i < mfrc522.uid.size; i++) {
-    content += String(mfrc522.uid.uidByte[i], HEX);
+  for (uint8_t i = 0; i < uidLength; i++) {
+    if (uid[i] < 0x10) content += "0";
+    content += String(uid[i], HEX);
   }
 
   content.toUpperCase();
@@ -778,6 +786,18 @@ void handleBootButton() {
 // SETUP
 // ==========================
 
+void initNfc() {
+  SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, NFC_SS_PIN);
+  nfc.begin();
+
+  uint32_t versiondata = nfc.getFirmwareVersion();
+  if (!versiondata) {
+    log("Didn't find PN532");
+    //AL. TODO - fail flamboyantly with sound and lights. 
+    while (1);
+  }
+}
+
 void setup() {
   if (DEBUG)
     Serial.begin(115200);
@@ -791,9 +811,10 @@ void setup() {
   pinMode(BUZZER_PIN, OUTPUT);
   pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
 
-  //TODO - initialise nfc stuffs in setup()
-  // SPI.begin();
-  // mfrc522.PCD_Init();
+  initNfc();
+
+  nfc.SAMConfig(); // enable reader
+  log("PN532 ready");
 
   loadWiFiList();
   loadDevicePrefs();
@@ -841,7 +862,7 @@ void loop() {
    
   if (millis() - lastNfcCheck > NFC_INTERVAL_MS) {
     lastNfcCheck = millis();
-    String tag = readNFCTag();
+    String tag = readNfcTag();
     if (tag != "") {
       handleNfcTag(tag);
     }
