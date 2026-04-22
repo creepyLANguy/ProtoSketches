@@ -132,6 +132,20 @@ void saveWiFi(String ssid, String pass) {
   preferences.end();
 }
 
+void loadDevicePrefs() {
+  preferences.begin("device-prefs", true);
+  currentCourtId = preferences.getString("courtId", "");
+  preferences.end();
+  log("Loaded Court ID: " + currentCourtId);
+}
+
+void saveCourtId(String courtId) {
+  preferences.begin("device-prefs", false);
+  preferences.putString("courtId", courtId);
+  preferences.end();
+  log("Saved Court ID: " + courtId);
+}
+
 // ==========================
 // 🔊 SOUND DEFINITIONS
 // ==========================
@@ -739,6 +753,7 @@ void handleNfcTag(String tag) {
   }
   else if (tag == EVENT_SPECTATE_COURT) {
     currentCourtId = ""; //TODO - should be something in the tag - make sure aligns to backend courtid format 
+    saveCourtId(currentCourtId);
     registerDeviceToCourt(DEVICEID, currentCourtId);
   }
   else if (tag == EVENT_REGISTER_DEVICE_TO_COURT) {
@@ -781,6 +796,7 @@ void setup() {
   // mfrc522.PCD_Init();
 
   loadWiFiList();
+  loadDevicePrefs();
 
   uint8_t baseMac[6];
   esp_read_mac(baseMac, ESP_MAC_BASE);
