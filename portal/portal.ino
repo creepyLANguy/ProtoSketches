@@ -22,11 +22,11 @@ const int BUZZER_PIN = 2;
 
 const int BOOT_BUTTON_PIN = 9;
 
+const int SPI_SCK  = 4;
+const int SPI_MISO = 5;
+const int SPI_MOSI = 6;
 const int NFC_SS_PIN = 7;
-const int NFC_RST_PIN = 1;
-const int SPI_SCK  4;
-const int SPI_MISO 5;
-const int SPI_MOSI 6;
+//const int NFC_RST_PIN = 1;
 
 Adafruit_PN532 nfc(NFC_SS_PIN);
 
@@ -708,9 +708,9 @@ void log(String s) {
 // NFC
 // ==========================
 
-String readNFCTag() {
+String readNfcTag() {
   uint8_t success;
-  uint8_t uid[] = {0, 0, 0, 0, 0, 0, 0};
+  uint8_t uid[7];
   uint8_t uidLength;
 
   success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength);
@@ -792,10 +792,13 @@ void initNfc() {
 
   uint32_t versiondata = nfc.getFirmwareVersion();
   if (!versiondata) {
-    log("Didn't find PN532");
+    log("❌ PN532 not found");
     //AL. TODO - fail flamboyantly with sound and lights. 
     while (1);
   }
+
+  nfc.SAMConfig();
+  log("✅ PN532 ready");
 }
 
 void setup() {
