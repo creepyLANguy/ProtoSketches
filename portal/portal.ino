@@ -61,7 +61,6 @@ unsigned long lastStatusFlash = 0;
 bool statusLedState = false;
 
 String DEVICEID = "";
-String currentCourtId = "";
 
 typedef const char *EVENT;
 
@@ -133,20 +132,6 @@ void saveWiFi(String ssid, String pass) {
     preferences.putString(("p" + String(i)).c_str(), savedWiFi[i].pass);
   }
   preferences.end();
-}
-
-void loadDevicePrefs() {
-  preferences.begin("device-prefs", true);
-  currentCourtId = preferences.getString("courtId", "");
-  preferences.end();
-  log("Loaded Court ID: " + currentCourtId);
-}
-
-void saveCourtId(String courtId) {
-  preferences.begin("device-prefs", false);
-  preferences.putString("courtId", courtId);
-  preferences.end();
-  log("Saved Court ID: " + courtId);
 }
 
 // ==========================
@@ -613,8 +598,8 @@ void sendEvent(EVENT event) {
    
   char payload[PAYLOAD_BUFFER_SIZE];
   snprintf(payload, sizeof(payload),
-           "{\"deviceId\":\"%s\",\"eventType\":\"%s\"}", DEVICEID.c_str(),
-           event);
+           "{\"deviceId\":\"%s\",\"eventType\":\"%s\"}",
+           DEVICEID.c_str(), event);
 
   // retries once
   for (int i = 0; i < 2; i++) {
@@ -686,17 +671,29 @@ void factoryReset() {
 
 void resetScore() {
   playSound(SND_RESET_SCORE);
-  //TODO - sendEvent(EVENT_RESET);
+  sendEvent(EVENT_RESET);
 }
 
-void registerDeviceToCourt(String deviceId, String courtId) {
-  if (currentCourtId == "") {
+void spectateCourt(String courtId) {
+  if (courtId == "") {
     playSound(SND_REGISTER_DEVICE_IMPOSSIBLE);
     return;
   }
 
   playSound(SND_REGISTER_DEVICE);
-  //TODO - sendEvent(EVENT_REGISTER_DEVICE_TO_COURT);
+  //TODO - send courtId in payload.
+  sendEvent(EVENT_SPECTATE_COURT);
+}
+
+void registerDeviceToCourt(String deviceId) {  
+  if (deviceId == "") {
+    playSound(SND_REGISTER_DEVICE_IMPOSSIBLE);
+    return;
+  }
+
+  playSound(SND_REGISTER_DEVICE);
+  //TODO - send deviceId in payload.
+  sendEvent(EVENT_REGISTER_DEVICE_TO_COURT);
 }
 
 void log(String s) {
@@ -760,12 +757,12 @@ void handleNfcTag(String tag) {
     resetScore();
   }
   else if (tag == EVENT_SPECTATE_COURT) {
-    currentCourtId = ""; //TODO - should be something in the tag - make sure aligns to backend courtid format 
-    saveCourtId(currentCourtId);
-    registerDeviceToCourt(DEVICEID, currentCourtId);
+    String courtId = ""; //TODO - determine courtId from tag.
+    spectateCourt(courtId);
   }
   else if (tag == EVENT_REGISTER_DEVICE_TO_COURT) {
-    //TODO - call registerDeviceToCourt();
+    String deviceId = ""; //TODO - determine deviceId from tag.
+    registerDeviceToCourt(deviceId);
   }
   else if (tag == EVENT_FACTORY_RESET_DEVICE) {
     factoryReset();
@@ -793,7 +790,7 @@ void initNfc() {
   uint32_t versiondata = nfc.getFirmwareVersion();
   if (!versiondata) {
     log("❌ PN532 not found");
-    //AL. TODO - fail flamboyantly with sound and lights. 
+    //TODO - fail flamboyantly with sound and lights. 
     while (1);
   }
 
@@ -820,7 +817,6 @@ void setup() {
   log("PN532 ready");
 
   loadWiFiList();
-  loadDevicePrefs();
 
   uint8_t baseMac[6];
   esp_read_mac(baseMac, ESP_MAC_BASE);
