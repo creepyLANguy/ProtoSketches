@@ -681,19 +681,17 @@ void spectateCourt(String courtId) {
   }
 
   playSound(SND_REGISTER_DEVICE);
-  //TODO - send courtId in payload.
-  sendEvent(EVENT_SPECTATE_COURT);
+  //TODO - send target courtId in payload with EVENT_SPECTATE_COURT.
 }
 
-void registerDeviceToCourt(String deviceId) {  
-  if (deviceId == "") {
+void registerDeviceToCourt(String registeringDeviceId) {  
+  if (registeringDeviceId == "") {
     playSound(SND_REGISTER_DEVICE_IMPOSSIBLE);
     return;
   }
 
   playSound(SND_REGISTER_DEVICE);
-  //TODO - send deviceId in payload.
-  sendEvent(EVENT_REGISTER_DEVICE_TO_COURT);
+  //TODO - send registeringDeviceId in payload with EVENT_REGISTER_DEVICE_TO_COURT.
 }
 
 void log(String s) {
