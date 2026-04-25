@@ -34,7 +34,7 @@ String lastTag = "";
 unsigned long lastTagTime = 0;
 const unsigned long TAG_COOLDOWN = 2000;
 unsigned long lastNfcCheck = 0;
-const int NFC_INTERVAL_MS = 100;
+const int NFC_INTERVAL_MS = 500;
 
 bool bootButtonPressed = false;
 unsigned long bootButtonPressStart = 0;
@@ -73,7 +73,7 @@ WiFiClientSecure client;
 const uint16_t HTTPS_CONNECT_TIMEOUT = 2000;
 const uint16_t HTTPS_RESPONSE_TIMEOUT = 3000;
 const int POST_RETRY_INTERVAL = 250;
-const int PAYLOAD_BUFFER_SIZE = 256;
+const int PAYLOAD_BUFFER_SIZE = 256; //TODO - perhaps increase size? Check if this is sufficient for all events.
 
 String REGION = "africa-south1";
 
@@ -802,11 +802,13 @@ void initNfc() {
   SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, NFC_SS_PIN);
   nfc.begin();
 
+  nfc.setPassiveActivationRetries(0x01);
+
   uint32_t versiondata = nfc.getFirmwareVersion();
-  if (!versiondata) {
-    log("❌ PN532 not found");
+  if (!versiondata) {    
     //TODO - fail flamboyantly with sound and lights. 
-    while (1);
+    log("❌ PN532 not found - continuing without NFC");
+    return;
   }
 
   nfc.SAMConfig();
@@ -827,9 +829,6 @@ void setup() {
   pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
 
   initNfc();
-
-  nfc.SAMConfig(); // enable reader
-  log("PN532 ready");
 
   loadWiFiList();
 
