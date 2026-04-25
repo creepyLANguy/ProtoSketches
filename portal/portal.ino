@@ -589,17 +589,19 @@ void startCaptivePortal() {
   playSound(SND_NO_WIFI);
 }
 
-void sendEvent(EVENT event) {
+void postEventPayload(EVENT event, String payload) {
   if (WiFi.status() != WL_CONNECTED)
   {
     playSound(SND_NO_WIFI);
     return;
   }
-   
-  char payload[PAYLOAD_BUFFER_SIZE];
-  snprintf(payload, sizeof(payload),
-           "{\"deviceId\":\"%s\",\"eventType\":\"%s\"}",
-           DEVICEID.c_str(), event);
+
+  if (payload.length() >= PAYLOAD_BUFFER_SIZE)
+  {
+    log("Payload too large: " + payload);
+    playSound(SND_HTTP_POST_FAILED);
+    return;
+  }
 
   // retries once
   for (int i = 0; i < 2; i++) {
@@ -628,6 +630,13 @@ void sendEvent(EVENT event) {
   }
 
   playSound(SND_HTTP_POST_FAILED);
+}
+
+void sendEvent(EVENT event) {
+  postEventPayload(
+    event,
+    "{\"deviceId\":\"" + DEVICEID + "\",\"eventType\":\"" + String(event) + "\"}"
+  );
 }
 
 // ==========================
@@ -681,7 +690,11 @@ void spectateCourt(String courtId) {
   }
 
   playSound(SND_REGISTER_DEVICE);
-  //TODO - send target courtId in payload with EVENT_SPECTATE_COURT.
+  postEventPayload(
+    EVENT_SPECTATE_COURT,
+    "{\"deviceId\":\"" + DEVICEID + "\",\"eventType\":\"" + String(EVENT_SPECTATE_COURT) +
+      "\",\"courtId\":\"" + courtId + "\"}"
+  );
 }
 
 void registerDeviceToCourt(String registeringDeviceId) {  
@@ -691,7 +704,11 @@ void registerDeviceToCourt(String registeringDeviceId) {
   }
 
   playSound(SND_REGISTER_DEVICE);
-  //TODO - send registeringDeviceId in payload with EVENT_REGISTER_DEVICE_TO_COURT.
+  postEventPayload(
+    EVENT_REGISTER_DEVICE_TO_COURT,
+    "{\"deviceId\":\"" + DEVICEID + "\",\"eventType\":\"" + String(EVENT_REGISTER_DEVICE_TO_COURT) +
+      "\",\"registeringDeviceId\":\"" + registeringDeviceId + "\"}"
+  );
 }
 
 void log(String s) {
