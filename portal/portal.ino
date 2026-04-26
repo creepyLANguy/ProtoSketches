@@ -720,23 +720,41 @@ void log(String s) {
 // NFC
 // ==========================
 
-String readNfcTag() {
-  uint8_t success;
-  uint8_t uid[7];
-  uint8_t uidLength;
+String readNfcTag()
+{
+  //TODO - read and parse parse nfc tags written by phone with simple text such as "event:register;deviceid:1234567890", etc...
+  return "";
+}
 
-  success = nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength);
+String getTagField(String tag, String fieldName)
+{
+  fieldName.toUpperCase();
 
-  if (!success) return "";
+  int start = 0;
+  while (start < tag.length()) {
+    int end = tag.indexOf(';', start);
+    if (end == -1) {
+      end = tag.length();
+    }
 
-  String content = "";
-  for (uint8_t i = 0; i < uidLength; i++) {
-    if (uid[i] < 0x10) content += "0";
-    content += String(uid[i], HEX);
+    String segment = tag.substring(start, end);
+    int separator = segment.indexOf(':');
+    if (separator != -1) {
+      String key = segment.substring(0, separator);
+      key.trim();
+      key.toUpperCase();
+
+      if (key == fieldName) {
+        String value = segment.substring(separator + 1);
+        value.trim();
+        return value;
+      }
+    }
+
+    start = end + 1;
   }
 
-  content.toUpperCase();
-  return content;
+  return "";
 }
 
 bool isTagAllowed(String tag) {
@@ -752,34 +770,39 @@ bool isTagAllowed(String tag) {
 }
 
 void handleNfcTag(String tag) {
-  log("NFC Tag: " + tag);
+  log("\nNFC Tag Contents:\n" + tag + "\n");
 
   if (!isTagAllowed(tag)) {
     log("Tag debounced.");
     return;
   }
 
-  if (tag == EVENT_POINT_TEAM_A) {
+  String eventType = getTagField(tag, "EVENT");
+  if (eventType == "") {
+    eventType = tag;
+  }
+
+  if (eventType == EVENT_POINT_TEAM_A) {
     addPoint(EVENT_POINT_TEAM_A);
   }
-  else if (tag == EVENT_POINT_TEAM_B) {
+  else if (eventType == EVENT_POINT_TEAM_B) {
     addPoint(EVENT_POINT_TEAM_B);
   }
-  else if (tag == EVENT_UNDO) {
+  else if (eventType == EVENT_UNDO) {
     undo();
   }
-  else if (tag == EVENT_RESET) {
+  else if (eventType == EVENT_RESET) {
     resetScore();
   }
-  else if (tag == EVENT_SPECTATE_COURT) {
-    String courtId = ""; //TODO - determine courtId from tag.
+  else if (eventType == EVENT_SPECTATE_COURT) {
+    String courtId = getTagField(tag, "COURTID");
     spectateCourt(courtId);
   }
-  else if (tag == EVENT_REGISTER_DEVICE_TO_COURT) {
-    String deviceId = ""; //TODO - determine deviceId from tag.
+  else if (eventType == EVENT_REGISTER_DEVICE_TO_COURT) {
+    String deviceId = getTagField(tag, "DEVICEID");
     registerDeviceToCourt(deviceId);
   }
-  else if (tag == EVENT_FACTORY_RESET_DEVICE) {
+  else if (eventType == EVENT_FACTORY_RESET_DEVICE) {
     factoryReset();
   }
   else {
