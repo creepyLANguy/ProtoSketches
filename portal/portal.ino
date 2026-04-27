@@ -22,13 +22,16 @@ const int BUZZER_PIN = 2;
 
 const int BOOT_BUTTON_PIN = 9;
 
-const int SPI_SCK  = 4;
+const int SPI_SCK = 4;
 const int SPI_MISO = 5;
 const int SPI_MOSI = 6;
 const int NFC_SS_PIN = 7;
 //const int NFC_RST_PIN = 1;
 
-Adafruit_PN532 nfc(NFC_SS_PIN);
+// AL.
+// Adafruit_PN532 nfc(NFC_SS_PIN);
+Adafruit_PN532 nfc(SPI_SCK, SPI_MISO, SPI_MOSI, NFC_SS_PIN);
+//
 
 String lastTag = "";
 unsigned long lastTagTime = 0;
@@ -350,12 +353,12 @@ void ensureWiFi() {
     log("WiFi Connected");
     playSound(SND_CONNECTED);
     digitalWrite(LED_PIN, LOW);
-    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);    
+    esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
     hasPlayedNoWifiSound = false;
   } 
   else if (!isConnected && wasConnected) {
     log("Lost connection");
-    
+
     if (!hasPlayedNoWifiSound) {
       playSound(SND_NO_WIFI);
       hasPlayedNoWifiSound = true;
@@ -554,7 +557,7 @@ void startCaptivePortal() {
   WiFi.mode(WIFI_AP);
 
   if (!WiFi.softAPConfig(apIP, gateway, subnet)) {
-      log("Failed to configure AP IP!");
+    log("Failed to configure AP IP!");
   }
 
   String shortId;
@@ -648,9 +651,9 @@ void addPoint(EVENT event) {
   sendEvent(event);
 }
 
-void undo() { 
+void undo() {
   playSound(SND_UNDO);
-  sendEvent(EVENT_UNDO); 
+  sendEvent(EVENT_UNDO);
 }
 
 void factoryReset() {
@@ -720,9 +723,8 @@ void log(String s) {
 // NFC
 // ==========================
 
-String readNfcTag()
-{
-  //TODO - read and parse parse nfc tags written by phone with simple text such as "event:register;deviceid:1234567890", etc...
+String readNfcTag() {
+  //TODO - implement tag reading for plain text records in format "event:register;deviceid:1234567890"
   return "";
 }
 
@@ -781,6 +783,7 @@ void handleNfcTag(String tag) {
   if (eventType == "") {
     eventType = tag;
   }
+  eventType.toUpperCase();
 
   if (eventType == EVENT_POINT_TEAM_A) {
     addPoint(EVENT_POINT_TEAM_A);
@@ -811,8 +814,8 @@ void handleNfcTag(String tag) {
 }
 
 void handleBootButton() {
-  if (digitalRead(BOOT_BUTTON_PIN) == LOW) {  
-    log("Factory reset triggered via BOOT button");  
+  if (digitalRead(BOOT_BUTTON_PIN) == LOW) {
+    log("Factory reset triggered via BOOT button");
     factoryReset();
   }
 }
@@ -822,13 +825,12 @@ void handleBootButton() {
 // ==========================
 
 void initNfc() {
-  SPI.begin(SPI_SCK, SPI_MISO, SPI_MOSI, NFC_SS_PIN);
   nfc.begin();
 
-  nfc.setPassiveActivationRetries(0x01);
+  nfc.setPassiveActivationRetries(0xFF);
 
   uint32_t versiondata = nfc.getFirmwareVersion();
-  if (!versiondata) {    
+  if (!versiondata) {
     //TODO - fail flamboyantly with sound and lights. 
     log("❌ PN532 not found - continuing without NFC");
     return;
@@ -839,8 +841,10 @@ void initNfc() {
 }
 
 void setup() {
-  if (DEBUG)
+  if (DEBUG) {
     Serial.begin(115200);
+    delay(200);
+  }
 
   log("\n\nSetting Up...");
 
@@ -895,7 +899,7 @@ void loop() {
   updateSound();
 
   handleBootButton();
-   
+
   if (millis() - lastNfcCheck > NFC_INTERVAL_MS) {
     lastNfcCheck = millis();
     String tag = readNfcTag();
