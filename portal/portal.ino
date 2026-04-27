@@ -28,10 +28,7 @@ const int SPI_MOSI = 6;
 const int NFC_SS_PIN = 7;
 //const int NFC_RST_PIN = 1;
 
-// AL.
-// Adafruit_PN532 nfc(NFC_SS_PIN);
 Adafruit_PN532 nfc(SPI_SCK, SPI_MISO, SPI_MOSI, NFC_SS_PIN);
-//
 
 String lastTag = "";
 unsigned long lastTagTime = 0;
