@@ -251,10 +251,6 @@ bool isPlayingSound = false;
 bool hasPlayedNoWifiSound = false;
 
 void playSound(SOUNDS sound) {
-  //AL.
-  if (isPlayingSound) return;
-  return;
-
   switch (sound) {
   case SND_CONNECTED:
     startSound(SND_CONNECTED_OBJ);
