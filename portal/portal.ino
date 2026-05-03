@@ -17,7 +17,7 @@ const String deviceSKU = "Beacon Pro";
 const String FIREBASE_PROJECT = "[PROJECT_ID]";
 const String FIREBASE_APIKEY = "[API_KEY]";
 
-const int LED_PIN = 8;
+const int LED_PIN = 1;
 const int BUZZER_PIN = 2;
 
 const int BOOT_BUTTON_PIN = 9;
@@ -251,6 +251,10 @@ bool isPlayingSound = false;
 bool hasPlayedNoWifiSound = false;
 
 void playSound(SOUNDS sound) {
+  //AL.
+  if (isPlayingSound) return;
+  return;
+
   switch (sound) {
   case SND_CONNECTED:
     startSound(SND_CONNECTED_OBJ);
@@ -704,6 +708,7 @@ void spectateCourt(String courtId) {
   }
 
   playSound(SND_REGISTER_DEVICE);
+  
   postEventPayload(
     EVENT_SPECTATE_COURT,
     "{\"deviceId\":\"" + DEVICEID + "\",\"eventType\":\"" + String(EVENT_SPECTATE_COURT) +
@@ -719,6 +724,7 @@ void registerDeviceToCourt(String registeringDeviceId) {
   }
 
   playSound(SND_REGISTER_DEVICE);
+
   postEventPayload(
     EVENT_REGISTER_DEVICE_TO_COURT,
     "{\"deviceId\":\"" + DEVICEID + "\",\"eventType\":\"" + String(EVENT_REGISTER_DEVICE_TO_COURT) +
@@ -890,6 +896,19 @@ void doNfcStuff() {
   }
 }
 
+void doConfigModeThings() {
+  dnsServer.processNextRequest();
+    server.handleClient();
+
+    // Flash LED in config mode
+    unsigned long now = millis();
+    if (now - lastStatusFlash > 500) {
+      lastStatusFlash = now;
+      statusLedState = !statusLedState;
+      digitalWrite(LED_PIN, statusLedState);
+    }
+}
+
 // ==========================
 // SETUP
 // ==========================
@@ -958,25 +977,8 @@ void setup() {
 // ==========================
 
 void loop() {
-  if (!isConfigMode) {
-    static unsigned long lastBeat = 0;
-    if (millis() - lastBeat > 1000) {
-      lastBeat = millis();
-      digitalWrite(LED_PIN, !digitalRead(LED_PIN));
-    }
-  }
-
   if (isConfigMode) {
-    dnsServer.processNextRequest();
-    server.handleClient();
-
-    // Flash LED in config mode
-    unsigned long now = millis();
-    if (now - lastStatusFlash > 500) {
-      lastStatusFlash = now;
-      statusLedState = !statusLedState;
-      digitalWrite(LED_PIN, statusLedState);
-    }
+    doConfigModeThings();
   } else {
     ensureWiFi();
   }
