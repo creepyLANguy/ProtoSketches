@@ -34,7 +34,7 @@ String lastTag = "";
 unsigned long lastTagTime = 0;
 const unsigned long TAG_COOLDOWN = 2000;
 unsigned long lastNfcCheck = 0;
-const int NFC_INTERVAL_MS = 500;
+const int NFC_INTERVAL_MS = 100;
 bool isNfcAvailable = false;
 
 bool bootButtonPressed = false;
@@ -740,11 +740,11 @@ void readNfcTag(String* buffer) {
   int index = 0;
 
   for (uint8_t page = 4; page < 20; page++) {
-    uint8_t buffer[4];
+    uint8_t pageData[4];
 
-    if (nfc.ntag2xx_ReadPage(page, buffer)) {
+    if (nfc.ntag2xx_ReadPage(page, pageData)) {
       for (int i = 0; i < 4; i++) {
-        data[index++] = buffer[i];
+        data[index++] = pageData[i];
       }
     }
   }
@@ -872,6 +872,8 @@ void initNfc() {
 
   nfc.SAMConfig();
 
+  nfc.setPassiveActivationRetries(0x00);
+
   isNfcAvailable = true;
 
   log("✅ PN532 ready");
@@ -942,10 +944,9 @@ void loop() {
     lastNfcCheck = millis();
     String tag = "";
     readNfcTag(&tag);
-    log("\nNFC Tag Text Contents: ");
-    log(tag);
-    log("");
-    if (tag != "") { 
+    if (tag != "") {
+      log("NFCTag Text Contents: ");
+      log(tag);
       handleNfcTag(tag);
     }
   }
