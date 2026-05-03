@@ -31,6 +31,7 @@ const int BOOT_BUTTON_PIN = 9;
 Adafruit_PN532 nfc(PN532_SS);
 
 String lastTag = "";
+String lastUid = "";
 unsigned long lastTagTime = 0;
 const unsigned long TAG_COOLDOWN = 2000;
 unsigned long lastNfcCheck = 0;
@@ -706,6 +707,7 @@ void spectateCourt(String courtId) {
 }
 
 void registerDeviceToCourt(String registeringDeviceId) {  
+  log("DEVICEID: " + String(deviceId));
   if (registeringDeviceId == "") {
     playSound(SND_REGISTER_DEVICE_IMPOSSIBLE);
     return;
@@ -728,14 +730,25 @@ void log(String s) {
 // NFC
 // ==========================
 
-void readNfcTag(String* buffer) {
+bool detectTag(String* uidStr) {
   uint8_t uid[7];
   uint8_t uidLength;
 
-  if (!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {    
-    return;
+  if (!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
+    return false;
   }
 
+  *uidStr = "";
+  for (int i = 0; i < uidLength; i++) {
+    if (uid[i] < 0x10) *uidStr += "0";
+    *uidStr += String(uid[i], HEX);
+  }
+
+  uidStr->toUpperCase();
+  return true;
+}
+
+String readTagData() {
   uint8_t data[64];
   int index = 0;
 
@@ -749,16 +762,21 @@ void readNfcTag(String* buffer) {
     }
   }
 
+  String result = "";
+
   for (int i = 0; i < index; i++) {
-    if (data[i] == 0x54) { // 'T'
+    if (i > 0 && data[i] == 0x54) { // 'T'
       uint8_t payloadLength = data[i - 1];
       uint8_t langLength = data[i + 1];
+
       for (int j = i + 2 + langLength; j < i + 1 + payloadLength; j++) {
-        *buffer += (char)data[j];
-      }      
+        result += (char)data[j];
+      }
       break;
     }
   }
+
+  return result;
 }
 
 String getTagField(String tag, String fieldName) {
@@ -792,34 +810,14 @@ String getTagField(String tag, String fieldName) {
   return "";
 }
 
-bool isTagAllowed(String tag) {
-  unsigned long now = millis();
-
-  if (tag == lastTag && (now - lastTagTime < TAG_COOLDOWN)) {
-    return false;
-  }
-
-  lastTag = tag;
-  lastTagTime = now;
-  return true;
-}
-
 void handleNfcTag(String tag) {
-  if (!isTagAllowed(tag)) {
-    log("Tag debounced.");
-    return;
-  }
-
   String eventType = getTagField(tag, "EVENT");
   if (eventType == "") {
     eventType = tag;
   }
   eventType.toUpperCase();
 
-//AL.
-log("DEBUG EVENT TYPE:");
-log(eventType);
-//
+  log("EVENT TYPE: " + String(eventType));
 
   if (eventType == EVENT_POINT_TEAM_A) {
     addPoint(EVENT_POINT_TEAM_A);
@@ -839,10 +837,6 @@ log(eventType);
   }
   else if (eventType == EVENT_REGISTER_DEVICE_TO_COURT) {
     String deviceId = getTagField(tag, "DEVICEID");
-//AL.
-log("DEVICEID:");
-log(deviceId);
-//
     registerDeviceToCourt(deviceId);
   }
   else if (eventType == EVENT_FACTORY_RESET_DEVICE) {
@@ -850,6 +844,37 @@ log(deviceId);
   }
   else {
     playSound(SND_UNKNOWN_TAG);
+  }
+}
+
+void doNfcStuff() {
+  if (isNfcAvailable && (millis() - lastNfcCheck > NFC_INTERVAL_MS)) {
+    lastNfcCheck = millis();
+
+    String uid = "";
+
+    if (detectTag(&uid)) {
+
+      if (uid != lastUid) {
+        lastUid = uid;
+
+        log("\nNew tag detected: " + uid);
+
+        String tag = readTagData();
+
+        log("NFC Tag Text Contents:");
+        log(tag);
+        log("");
+
+        if (tag != "") {
+          handleNfcTag(tag);
+        }
+      }
+
+    } else {
+      // Tag removed → allow next scan
+      lastUid = "";
+    }
   }
 }
 
@@ -865,7 +890,7 @@ void initNfc() {
   nfc.begin();
 
   if (!nfc.getFirmwareVersion()) {
-    //TODO - fail flamboyantly with sound and lights.
+    //TODO - fail flamboyantly
     log("❌ Didn't find PN532");
     while (1);
   }
@@ -921,6 +946,14 @@ void setup() {
 // ==========================
 
 void loop() {
+  if (!isConfigMode) {
+    static unsigned long lastBeat = 0;
+    if (millis() - lastBeat > 1000) {
+      lastBeat = millis();
+      digitalWrite(LED_PIN, !digitalRead(LED_PIN));
+    }
+  }
+
   if (isConfigMode) {
     dnsServer.processNextRequest();
     server.handleClient();
@@ -940,14 +973,5 @@ void loop() {
 
   handleBootButton();
 
-  if (isNfcAvailable && (millis() - lastNfcCheck > NFC_INTERVAL_MS)) {
-    lastNfcCheck = millis();
-    String tag = "";
-    readNfcTag(&tag);
-    if (tag != "") {
-      log("NFCTag Text Contents: ");
-      log(tag);
-      handleNfcTag(tag);
-    }
-  }
+  doNfcStuff();
 }
