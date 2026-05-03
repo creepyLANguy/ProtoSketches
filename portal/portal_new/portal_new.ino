@@ -35,6 +35,7 @@ unsigned long lastTagTime = 0;
 const unsigned long TAG_COOLDOWN = 2000;
 unsigned long lastNfcCheck = 0;
 const int NFC_INTERVAL_MS = 500;
+bool isNfcAvailable = false;
 
 bool bootButtonPressed = false;
 unsigned long bootButtonPressStart = 0;
@@ -706,9 +707,6 @@ void spectateCourt(String courtId) {
 
 void registerDeviceToCourt(String registeringDeviceId) {  
   if (registeringDeviceId == "") {
-    //AL.
-    log (registeringDeviceId);
-    //
     playSound(SND_REGISTER_DEVICE_IMPOSSIBLE);
     return;
   }
@@ -730,23 +728,14 @@ void log(String s) {
 // NFC
 // ==========================
 
-String readNfcTag() {
+void readNfcTag(String* buffer) {
   uint8_t uid[7];
   uint8_t uidLength;
 
-  if (!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
-    log("\nFAILED : nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)");
-    return "";
+  if (!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {    
+    return;
   }
 
-  // log("UID: ");
-  // for (uint8_t i = 0; i < uidLength; i++) {
-  //   if (uid[i] < 0x10) log("0");
-  //   Serial.print(uid[i], HEX);
-  //   Serial.print(" ");
-  // }
-
-  // ===== READ MULTIPLE PAGES =====
   uint8_t data[64];
   int index = 0;
 
@@ -760,35 +749,20 @@ String readNfcTag() {
     }
   }
 
-  // ===== DEBUG RAW =====
-  // log("Raw bytes:");
-  // for (int i = 0; i < index; i++) {
-  //   Serial.print(data[i], HEX);
-  //   Serial.print(" ");
-  // }
-  // log("");
-
-  // ===== FIND NDEF TEXT RECORD =====
-  String buffer = "";
   for (int i = 0; i < index; i++) {
     if (data[i] == 0x54) { // 'T'
-      uint8_t payloadLength = data[i - 1]; // length before 'T'
+      uint8_t payloadLength = data[i - 1];
       uint8_t langLength = data[i + 1];
-
-      log("\nTag Text: ");
       for (int j = i + 2 + langLength; j < i + 1 + payloadLength; j++) {
-        Serial.print((char)data[j]);
-        buffer += (char)data[j];
-      }
-      log("");
+        *buffer += (char)data[j];
+      }      
       break;
     }
   }
-
-  return buffer;
 }
 
 String getTagField(String tag, String fieldName) {
+  tag.toUpperCase();
   fieldName.toUpperCase();
 
   int start = 0;
@@ -842,6 +816,11 @@ void handleNfcTag(String tag) {
   }
   eventType.toUpperCase();
 
+//AL.
+log("DEBUG EVENT TYPE:");
+log(eventType);
+//
+
   if (eventType == EVENT_POINT_TEAM_A) {
     addPoint(EVENT_POINT_TEAM_A);
   }
@@ -860,6 +839,10 @@ void handleNfcTag(String tag) {
   }
   else if (eventType == EVENT_REGISTER_DEVICE_TO_COURT) {
     String deviceId = getTagField(tag, "DEVICEID");
+//AL.
+log("DEVICEID:");
+log(deviceId);
+//
     registerDeviceToCourt(deviceId);
   }
   else if (eventType == EVENT_FACTORY_RESET_DEVICE) {
@@ -875,7 +858,7 @@ void handleNfcTag(String tag) {
 // ==========================
 
 void initNfc() {
-  log("PN532 NFC Reader (SPI) starting...");
+  log("\nPN532 NFC Reader (SPI) starting...");
 
   SPI.begin(PN532_SCK, PN532_MISO, PN532_MOSI);
 
@@ -887,9 +870,11 @@ void initNfc() {
     while (1);
   }
 
-  log("✅ PN532 ready");
-
   nfc.SAMConfig();
+
+  isNfcAvailable = true;
+
+  log("✅ PN532 ready");
   log("Waiting for NFC tag...");
 }
 
@@ -907,7 +892,7 @@ void setup() {
   pinMode(LED_PIN, OUTPUT);
   pinMode(BUZZER_PIN, OUTPUT);
   pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
-
+    
   initNfc();
 
   loadWiFiList();
@@ -953,10 +938,14 @@ void loop() {
 
   handleBootButton();
 
-  if (millis() - lastNfcCheck > NFC_INTERVAL_MS) {
+  if (isNfcAvailable && (millis() - lastNfcCheck > NFC_INTERVAL_MS)) {
     lastNfcCheck = millis();
-    String tag = readNfcTag();
-    if (tag != "") {
+    String tag = "";
+    readNfcTag(&tag);
+    log("\nNFC Tag Text Contents: ");
+    log(tag);
+    log("");
+    if (tag != "") { 
       handleNfcTag(tag);
     }
   }
