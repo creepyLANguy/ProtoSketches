@@ -707,7 +707,7 @@ void spectateCourt(String courtId) {
 }
 
 void registerDeviceToCourt(String registeringDeviceId) {  
-  log("DEVICEID: " + String(deviceId));
+  log("DEVICEID: " + registeringDeviceId);
   if (registeringDeviceId == "") {
     playSound(SND_REGISTER_DEVICE_IMPOSSIBLE);
     return;
