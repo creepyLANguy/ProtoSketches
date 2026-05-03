@@ -596,17 +596,10 @@ void startCaptivePortal() {
   playSound(SND_NO_WIFI);
 }
 
-void postEventPayload(EVENT event, String payload) {
+void postEventPayload(EVENT event, const char *payload) {
   if (WiFi.status() != WL_CONNECTED)
   {
     playSound(SND_NO_WIFI);
-    return;
-  }
-
-  if (payload.length() >= PAYLOAD_BUFFER_SIZE)
-  {
-    log("Payload too large: " + payload);
-    playSound(SND_HTTP_POST_FAILED);
     return;
   }
 
@@ -640,9 +633,13 @@ void postEventPayload(EVENT event, String payload) {
 }
 
 void sendEvent(EVENT event) {
+  char payload[PAYLOAD_BUFFER_SIZE];
+  snprintf(payload, sizeof(payload),
+           "{\"deviceId\":\"%s\",\"eventType\":\"%s\"}",
+           DEVICEID.c_str(), event);
+
   postEventPayload(
-    event,
-    "{\"deviceId\":\"" + DEVICEID + "\",\"eventType\":\"" + String(event) + "\"}"
+    event, payload
   );
 }
 
@@ -704,11 +701,12 @@ void spectateCourt(String courtId) {
   }
 
   playSound(SND_REGISTER_DEVICE);
-  
+  char payload[PAYLOAD_BUFFER_SIZE];
+  snprintf(payload, sizeof(payload),
+           "{\"deviceId\":\"%s\",\"eventType\":\"%s\",\"courtId\":\"%s\"}",
+           DEVICEID.c_str(), EVENT_SPECTATE_COURT, courtId.c_str());
   postEventPayload(
-    EVENT_SPECTATE_COURT,
-    "{\"deviceId\":\"" + DEVICEID + "\",\"eventType\":\"" + String(EVENT_SPECTATE_COURT) +
-      "\",\"courtId\":\"" + courtId + "\"}"
+    EVENT_SPECTATE_COURT, payload
   );
 }
 
@@ -720,11 +718,13 @@ void registerDeviceToCourt(String registeringDeviceId) {
   }
 
   playSound(SND_REGISTER_DEVICE);
-
+  char payload[PAYLOAD_BUFFER_SIZE];
+  snprintf(payload, sizeof(payload),
+           "{\"deviceId\":\"%s\",\"eventType\":\"%s\",\"registeringDeviceId\":\"%s\"}",
+           DEVICEID.c_str(), EVENT_REGISTER_DEVICE_TO_COURT,
+           registeringDeviceId.c_str());
   postEventPayload(
-    EVENT_REGISTER_DEVICE_TO_COURT,
-    "{\"deviceId\":\"" + DEVICEID + "\",\"eventType\":\"" + String(EVENT_REGISTER_DEVICE_TO_COURT) +
-      "\",\"registeringDeviceId\":\"" + registeringDeviceId + "\"}"
+    EVENT_REGISTER_DEVICE_TO_COURT, payload
   );
 }
 
