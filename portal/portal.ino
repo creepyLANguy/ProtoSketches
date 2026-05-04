@@ -94,6 +94,7 @@ const EVENT EVENT_RESET = "RESET";
 const EVENT EVENT_REGISTER_DEVICE_TO_COURT = "REGISTER";
 const EVENT EVENT_SPECTATE_COURT = "SPECTATE";
 const EVENT EVENT_FACTORY_RESET_DEVICE = "FACTORY_RESET_DEVICE";
+const EVENT EVENT_WIFI_CONNECT = "WIFI_CONNECT";
 
 void loadWiFiList() {
   preferences.begin("wifi-store", true);
@@ -175,6 +176,7 @@ struct Sound {
 void playSound(SOUNDS sound);
 void startSound(Sound& sound);
 void updateSound();
+String getTagField(String tag, String fieldName);
 
 const int BUZZER_TONE_CLICK = 3000;
 const int BUZZER_DURATION = 200;
@@ -383,6 +385,42 @@ void ensureWiFi() {
   }
 }
 
+void finishSuccessfulWiFiConnection() {
+  if (isConfigMode) {
+    isConfigMode = false;
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_STA);
+    log("Switching to STA mode");
+  }
+}
+
+String getWiFiPasswordFromTag(String tag) {
+  String pass = getTagField(tag, "PASS");
+  if (pass == "") {
+    pass = getTagField(tag, "PASSWORD");
+  }
+  return pass;
+}
+
+bool connectToWiFi(String ssid, String pass) {
+  ssid.trim();
+  pass.trim();
+
+  if (ssid == "") {
+    log("WIFI_CONNECT tag missing SSID");
+    playSound(SND_UNKNOWN_TAG);
+    return false;
+  }
+
+  if (tryConnect(ssid, pass)) {
+    return true;
+  }
+
+  WiFi.disconnect();
+  playSound(SND_NO_WIFI);
+  return false;
+}
+
 void handleRoot() {
   String html =
       "<!DOCTYPE html><html lang='en'><head>"
@@ -507,7 +545,7 @@ void handleConnect() {
   server.send(200, "text/html", html);
 
   delay(1000);
-  if (tryConnect(ssid, pass)) {
+  if (connectToWiFi(ssid, pass)) {
     html =
         "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>"
         "<style>body { background: #0a0e17; color: #f7ff00; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }"
@@ -524,14 +562,10 @@ void handleConnect() {
     log("Connected! Closing AP mode in 2 seconds...");
     delay(2000);
 
-    isConfigMode = false;
-    WiFi.softAPdisconnect(true);
-    log("Switching to STA mode");
+    finishSuccessfulWiFiConnection();
   } 
   else {
     log("Failed to connect, showing failure page");
-    WiFi.disconnect();
-    playSound(SND_NO_WIFI);
 
     html =
         "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>"
@@ -787,7 +821,6 @@ String readTagData() {
 }
 
 String getTagField(String tag, String fieldName) {
-  tag.toUpperCase();
   fieldName.toUpperCase();
 
   int start = 0;
@@ -815,6 +848,16 @@ String getTagField(String tag, String fieldName) {
   }
 
   return "";
+}
+
+void handleWiFiConnectTag(String tag) {
+  String ssid = getTagField(tag, "SSID");
+  String pass = getWiFiPasswordFromTag(tag);
+
+  log("WIFI_CONNECT SSID: " + ssid);
+  if (connectToWiFi(ssid, pass)) {
+    finishSuccessfulWiFiConnection();
+  }
 }
 
 void handleNfcTag(String tag) {
@@ -849,6 +892,9 @@ void handleNfcTag(String tag) {
   else if (eventType == EVENT_FACTORY_RESET_DEVICE) {
     factoryReset();
   }
+  else if (eventType == EVENT_WIFI_CONNECT) {
+    handleWiFiConnectTag(tag);
+  }
   else {
     playSound(SND_UNKNOWN_TAG);
   }
@@ -880,6 +926,9 @@ void doNfcStuff() {
 
       if (tag != "") {
         handleNfcTag(tag);
+      }
+      else {
+        playSound(SND_UNKNOWN_TAG);
       }
 
     } else {
