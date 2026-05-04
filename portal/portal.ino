@@ -148,6 +148,7 @@ void saveWiFi(String ssid, String pass) {
 
 //TODO - test all sounds/scenarios.
 enum SOUNDS {
+  SND_WIFI_CONNECT_TRIGGERED,
   SND_CONNECTED,
   SND_NO_WIFI,
   SND_HTTP_POST_FAILED,
@@ -238,6 +239,10 @@ Sound SND_RESET_SCORE_OBJ = {{
   {BUZZER_TONE_CLICK / 2, 100, 20}},
   4};
 
+Sound SND_WIFI_CONNECT_TRIGGERED_OBJ = {{
+  {BUZZER_TONE_CLICK / 2, 200, 0}},
+  1};
+
 Sound SND_UNKNOWN_TAG_OBJ = {{
   {BUZZER_TONE_CLICK / 3, 20, 20},
   {BUZZER_TONE_CLICK / 3, 20, 20},
@@ -253,6 +258,9 @@ bool hasPlayedNoWifiSound = false;
 
 void playSound(SOUNDS sound, bool force = false) {
   switch (sound) {
+  case SND_WIFI_CONNECT_TRIGGERED: 
+    startSound(SND_WIFI_CONNECT_TRIGGERED_OBJ);
+    break;
   case SND_CONNECTED:
     startSound(SND_CONNECTED_OBJ);
     break;
@@ -857,10 +865,13 @@ String getTagField(String tag, String fieldName) {
 }
 
 void handleWiFiConnectTag(String tag) {
+  playSound(SND_WIFI_CONNECT_TRIGGERED, true);
+
   String ssid = getTagField(tag, "SSID");
   String pass = getWiFiPasswordFromTag(tag);
 
   log("WIFI_CONNECT SSID: " + ssid);
+  
   if (connectToWiFi(ssid, pass)) {
     finishSuccessfulWiFiConnection();
   }
