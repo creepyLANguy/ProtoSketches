@@ -927,6 +927,9 @@ void doNfcStuff() {
       if (tag != "") {
         handleNfcTag(tag);
       }
+      else {
+        playSound(SND_UNKNOWN_TAG);
+      }
 
     } else {
       noTagCount++;
