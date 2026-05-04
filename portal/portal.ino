@@ -173,7 +173,6 @@ struct Sound {
   int length;
 };
 
-void playSound(SOUNDS sound);
 void startSound(Sound& sound);
 void updateSound();
 String getTagField(String tag, String fieldName);
@@ -252,7 +251,7 @@ unsigned long soundStart = 0;
 bool isPlayingSound = false;
 bool hasPlayedNoWifiSound = false;
 
-void playSound(SOUNDS sound) {
+void playSound(SOUNDS sound, bool force = false) {
   switch (sound) {
   case SND_CONNECTED:
     startSound(SND_CONNECTED_OBJ);
@@ -284,6 +283,13 @@ void playSound(SOUNDS sound) {
   case SND_UNKNOWN_TAG:
     startSound(SND_UNKNOWN_TAG_OBJ);
     break;
+  }
+
+  if (force) {
+    while (isPlayingSound) {
+      updateSound();
+      delay(1);
+    }
   }
 }
 
@@ -630,11 +636,11 @@ void startCaptivePortal() {
   playSound(SND_NO_WIFI);
 }
 
-void postEventPayload(EVENT event, const char *payload) {
+bool postEventPayload(EVENT event, const char *payload) {
   if (WiFi.status() != WL_CONNECTED)
   {
     playSound(SND_NO_WIFI);
-    return;
+    return false;
   }
 
   // retries once
@@ -647,9 +653,14 @@ void postEventPayload(EVENT event, const char *payload) {
     https.begin(client, POSTEVENT_ENDPOINT);
     https.addHeader("Content-Type", "application/json");
 
-    log("\nEvent: \n" + String(event) + "\nEndpoint: \n" + POSTEVENT_ENDPOINT +
+    if (i == 0) {
+      log("\nEvent: \n" + String(event) + "\nEndpoint: \n" + POSTEVENT_ENDPOINT +
         "\nPayload: \n" + payload);
-
+    }
+    else {
+      log("\nRetrying...");
+    }
+    
     int code = https.POST(payload);
 
     log("\nResponse Code: \n" + String(code) + "\nResponse Message: \n" +
@@ -658,23 +669,22 @@ void postEventPayload(EVENT event, const char *payload) {
     https.end();
 
     if (code >= 200 && code < 300)
-      return;
+      return true;
 
     delay(POST_RETRY_INTERVAL);
   }
 
   playSound(SND_HTTP_POST_FAILED);
+  return false;
 }
 
-void sendEvent(EVENT event) {
+bool sendEvent(EVENT event) {
   char payload[PAYLOAD_BUFFER_SIZE];
   snprintf(payload, sizeof(payload),
            "{\"deviceId\":\"%s\",\"eventType\":\"%s\"}",
            DEVICEID.c_str(), event);
 
-  postEventPayload(
-    event, payload
-  );
+  return postEventPayload(event, payload);
 }
 
 // ==========================
@@ -694,18 +704,14 @@ void addPoint(EVENT event) {
 }
 
 void undo() {
-  playSound(SND_UNDO);
+  playSound(SND_UNDO, true);
   sendEvent(EVENT_UNDO);
 }
 
 void factoryReset() {
   log("FACTORY RESET INITIATED");
 
-  playSound(SND_FACTORY_RESET_DEVICE);
-  while (isPlayingSound) {
-    updateSound();
-    delay(1);
-  }
+  playSound(SND_FACTORY_RESET_DEVICE, true);
 
   preferences.begin("wifi-store", false);
   preferences.clear();
@@ -723,8 +729,8 @@ void factoryReset() {
   ESP.restart();
 }
 
-void resetScore() {
-  playSound(SND_RESET_SCORE);
+void resetScore() {  
+  playSound(SND_RESET_SCORE, true);
   sendEvent(EVENT_RESET);
 }
 
