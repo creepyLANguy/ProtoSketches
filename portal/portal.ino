@@ -80,7 +80,7 @@ WiFiClientSecure client;
 const uint16_t HTTPS_CONNECT_TIMEOUT = 2000;
 const uint16_t HTTPS_RESPONSE_TIMEOUT = 3000;
 const int POST_RETRY_INTERVAL = 250;
-const int PAYLOAD_BUFFER_SIZE = 256; //TODO - perhaps increase size? Check if this is sufficient for all events.
+const int PAYLOAD_BUFFER_SIZE = 256;
 
 String REGION = "africa-south1";
 
@@ -91,10 +91,11 @@ const EVENT EVENT_POINT_TEAM_A = "POINT_TEAM_A";
 const EVENT EVENT_POINT_TEAM_B = "POINT_TEAM_B";
 const EVENT EVENT_UNDO = "UNDO";
 const EVENT EVENT_RESET = "RESET";
-const EVENT EVENT_REGISTER_DEVICE_TO_COURT = "REGISTER";
+
+const EVENT EVENT_WIFI_CONNECT = "WIFI_CONNECT";
 const EVENT EVENT_SPECTATE_COURT = "SPECTATE";
 const EVENT EVENT_FACTORY_RESET_DEVICE = "FACTORY_RESET_DEVICE";
-const EVENT EVENT_WIFI_CONNECT = "WIFI_CONNECT";
+const EVENT EVENT_REGISTER_DEVICE_TO_COURT = "REGISTER";
 
 void loadWiFiList() {
   preferences.begin("wifi-store", true);
@@ -146,7 +147,6 @@ void saveWiFi(String ssid, String pass) {
 // 🔊 SOUND DEFINITIONS
 // ==========================
 
-//TODO - test all sounds/scenarios.
 enum SOUNDS {
   SND_WIFI_CONNECT_TRIGGERED,
   SND_CONNECTED,
@@ -765,7 +765,8 @@ void registerDeviceToCourt(String registeringDeviceId) {
     return;
   }
 
-  playSound(SND_REGISTER_DEVICE);
+  playSound(SND_REGISTER_DEVICE, true);
+
   char payload[PAYLOAD_BUFFER_SIZE];
   snprintf(payload, sizeof(payload),
            "{\"deviceId\":\"%s\",\"eventType\":\"%s\",\"registeringDeviceId\":\"%s\"}",
