@@ -6,18 +6,45 @@
 #include <WebServer.h>
 #include <WiFi.h>
 #include <WiFiClientSecure.h>
+#include <SPI.h>
+#include <Adafruit_PN532.h>
 
 const bool DEBUG = true;
 const bool UNDERCLOCK = false;
 
-const String deviceSKU = "Pulse Mini";
+const String deviceSKU = "Hub";
 
-const String FIREBASE_PROJECT = "[PROJECT_ID]";
-const String FIREBASE_APIKEY = "[API_KEY]";
+const String FIREBASE_PROJECT = "punto-8888";
+const String FIREBASE_APIKEY = "AIzaSyA6sA_c3yNUZvvo_dZanhydLn7jXl-55hU";
 
-const int LED_PIN = 2;
-const int BUTTON_PIN = 3;
-const int BUZZER_PIN = 4;
+const int LED_PIN = 1;
+const int BUZZER_PIN = 2;
+
+const int BOOT_BUTTON_PIN = 9;
+
+// SPI pins
+#define PN532_SCK   4
+#define PN532_MISO  5
+#define PN532_MOSI  6
+#define PN532_SS    7
+
+Adafruit_PN532 nfc(PN532_SS);
+
+const int NFC_INTERVAL_MS = 100;
+const int NO_TAG_THRESHOLD = 5; // ~500ms if interval is 100ms
+const unsigned long TAG_COOLDOWN = 2000;
+
+String lastTag = "";
+String lastUid = "";
+unsigned long lastTagTime = 0;
+unsigned long lastNfcCheck = 0;
+bool isNfcAvailable = false;
+int noTagCount = 0;
+String lastTriggeredUid = "";
+unsigned long lastTriggerTime = 0;
+
+bool bootButtonPressed = false;
+unsigned long bootButtonPressStart = 0;
 
 Preferences preferences;
 DNSServer dnsServer;
@@ -42,18 +69,9 @@ bool statusLedState = false;
 
 String DEVICEID = "";
 
-char currentTeam = 'A';
-
 typedef const char *EVENT;
 
-const int DEBOUNCE_TIME = 50;
-const int PRESS_COOLDOWN = 500;
-
-const int UNDO_HOLD_THRESHOLD = 2000;
-const int SWITCH_TEAM_HOLD_THRESHOLD = 5000;
-const int FACTORY_RESET_HOLD_THRESHOLD = 15000;
-
-const int WIFI_RETRY_INTERVAL = 5000;
+int wifi_retry_interval_ms = 5000;
 static bool wasConnected = false;
 unsigned long lastWiFiAttempt = 0;
 
@@ -72,6 +90,12 @@ String POSTEVENT_ENDPOINT = "https://" + REGION + "-" + FIREBASE_PROJECT +
 const EVENT EVENT_POINT_TEAM_A = "POINT_TEAM_A";
 const EVENT EVENT_POINT_TEAM_B = "POINT_TEAM_B";
 const EVENT EVENT_UNDO = "UNDO";
+const EVENT EVENT_RESET = "RESET";
+
+const EVENT EVENT_WIFI_CONNECT = "WIFI_CONNECT";
+const EVENT EVENT_SPECTATE_COURT = "SPECTATE";
+const EVENT EVENT_FACTORY_RESET_DEVICE = "FACTORY_RESET_DEVICE";
+const EVENT EVENT_REGISTER_DEVICE_TO_COURT = "REGISTER";
 
 void loadWiFiList() {
   preferences.begin("wifi-store", true);
@@ -84,7 +108,6 @@ void loadWiFiList() {
 }
 
 void saveWiFi(String ssid, String pass) {
-  // Check if already exists
   int existingIdx = -1;
   for (int i = 0; i < wifiCount; i++) {
     if (savedWiFi[i].ssid == ssid) {
@@ -93,12 +116,12 @@ void saveWiFi(String ssid, String pass) {
     }
   }
 
-  // Shift for MRU
   if (existingIdx != -1) {
     for (int i = existingIdx; i > 0; i--) {
       savedWiFi[i] = savedWiFi[i - 1];
     }
-  } else {
+  } 
+  else {
     int limit =
         (wifiCount < MAX_WIFI_NETWORKS) ? wifiCount : MAX_WIFI_NETWORKS - 1;
     for (int i = limit; i > 0; i--) {
@@ -111,7 +134,6 @@ void saveWiFi(String ssid, String pass) {
   savedWiFi[0].ssid = ssid;
   savedWiFi[0].pass = pass;
 
-  // Persist
   preferences.begin("wifi-store", false);
   preferences.putInt("count", wifiCount);
   for (int i = 0; i < wifiCount; i++) {
@@ -121,30 +143,22 @@ void saveWiFi(String ssid, String pass) {
   preferences.end();
 }
 
-void loadCurrentTeam() {
-  preferences.begin("device-prefs", true);
-  currentTeam = (char)preferences.getInt("team", 'A');
-  preferences.end();
-}
-
-void saveCurrentTeam(char team) {
-  preferences.begin("device-prefs", false);
-  preferences.putInt("team", (int)team);
-  preferences.end();
-}
-
 // ==========================
 // 🔊 SOUND DEFINITIONS
 // ==========================
 
 enum SOUNDS {
+  SND_WIFI_CONNECT_TRIGGERED,
   SND_CONNECTED,
   SND_NO_WIFI,
   SND_HTTP_POST_FAILED,
   SND_ADD_POINT,
   SND_UNDO,
-  SND_SWITCH_TEAM,
-  SND_FACTORY_RESET,
+  SND_RESET_SCORE,
+  SND_FACTORY_RESET_DEVICE,
+  SND_REGISTER_DEVICE,
+  SND_REGISTER_DEVICE_IMPOSSIBLE,
+  SND_UNKNOWN_TAG,
 };
 
 struct SoundStep {
@@ -160,9 +174,9 @@ struct Sound {
   int length;
 };
 
-void playSound(SOUNDS sound);
 void startSound(Sound& sound);
 void updateSound();
+String getTagField(String tag, String fieldName);
 
 const int BUZZER_TONE_CLICK = 3000;
 const int BUZZER_DURATION = 200;
@@ -175,13 +189,6 @@ Sound SND_UNDO_OBJ = {{
   {BUZZER_TONE_CLICK * 0.75, BUZZER_DURATION * 0.75, 50},
   {BUZZER_TONE_CLICK * 0.65, BUZZER_DURATION, 0}},
   2};
-
-Sound SND_SWITCH_TEAM_OBJ = {
-  {{BUZZER_TONE_CLICK / 2, BUZZER_DURATION, 50},
-  {BUZZER_TONE_CLICK / 1.5, BUZZER_DURATION / 1.5, 50},
-  {BUZZER_TONE_CLICK / 2, BUZZER_DURATION, 50},
-  {BUZZER_TONE_CLICK / 1.5, BUZZER_DURATION / 1.5, 0}},
-  4};
 
 Sound SND_CONNECTED_OBJ = {{
   {BUZZER_TONE_CLICK / 4, 80, 50},
@@ -204,7 +211,7 @@ Sound SND_HTTP_FAIL_OBJ = {{
   {BUZZER_TONE_CLICK / 2, 400, 0}},
   3};
 
-Sound SND_FACTORY_RESET_OBJ = {{
+Sound SND_FACTORY_RESET_DEVICE_OBJ = {{
   {BUZZER_TONE_CLICK, 50, 20},
   {BUZZER_TONE_CLICK * 0.8, 50, 20},
   {BUZZER_TONE_CLICK * 0.6, 50, 20},
@@ -213,13 +220,47 @@ Sound SND_FACTORY_RESET_OBJ = {{
   {BUZZER_TONE_CLICK * 0.1, 100, 0}},
   6};
 
+Sound SND_REGISTER_DEVICE_OBJ = {{
+  {BUZZER_TONE_CLICK, 50, 20},
+  {BUZZER_TONE_CLICK * 1.2, 50, 20},
+  {BUZZER_TONE_CLICK * 1.5, 50, 20}},
+  3};
+
+Sound SND_REGISTER_DEVICE_IMPOSSIBLE_OBJ = {{
+  {BUZZER_TONE_CLICK, 100, 20},
+  {BUZZER_TONE_CLICK / 3, 100, 20},
+  {BUZZER_TONE_CLICK / 6, 300, 20}},
+  3};
+
+Sound SND_RESET_SCORE_OBJ = {{
+  {BUZZER_TONE_CLICK * 2, 100, 20},
+  {BUZZER_TONE_CLICK / 2, 100, 20},
+  {BUZZER_TONE_CLICK * 2, 100, 20},
+  {BUZZER_TONE_CLICK / 2, 100, 20}},
+  4};
+
+Sound SND_WIFI_CONNECT_TRIGGERED_OBJ = {{
+  {BUZZER_TONE_CLICK / 2, 200, 0}},
+  1};
+
+Sound SND_UNKNOWN_TAG_OBJ = {{
+  {BUZZER_TONE_CLICK / 3, 20, 20},
+  {BUZZER_TONE_CLICK / 3, 20, 20},
+  {BUZZER_TONE_CLICK / 3, 20, 20},
+  {BUZZER_TONE_CLICK / 3, 20, 20}},
+  4};
+
 Sound currentSound;
 int soundIndex = 0;
 unsigned long soundStart = 0;
 bool isPlayingSound = false;
+bool hasPlayedNoWifiSound = false;
 
-void playSound(SOUNDS sound) {
+void playSound(SOUNDS sound, bool force = false) {
   switch (sound) {
+  case SND_WIFI_CONNECT_TRIGGERED: 
+    startSound(SND_WIFI_CONNECT_TRIGGERED_OBJ);
+    break;
   case SND_CONNECTED:
     startSound(SND_CONNECTED_OBJ);
     break;
@@ -235,12 +276,28 @@ void playSound(SOUNDS sound) {
   case SND_UNDO:
     startSound(SND_UNDO_OBJ);
     break;
-  case SND_SWITCH_TEAM:
-    startSound(SND_SWITCH_TEAM_OBJ);
+  case SND_FACTORY_RESET_DEVICE:
+    startSound(SND_FACTORY_RESET_DEVICE_OBJ);
     break;
-  case SND_FACTORY_RESET:
-    startSound(SND_FACTORY_RESET_OBJ);
+  case SND_REGISTER_DEVICE:
+    startSound(SND_REGISTER_DEVICE_OBJ);
     break;
+  case SND_REGISTER_DEVICE_IMPOSSIBLE:
+    startSound(SND_REGISTER_DEVICE_IMPOSSIBLE_OBJ);
+    break;
+  case SND_RESET_SCORE:
+    startSound(SND_RESET_SCORE_OBJ);
+    break;
+  case SND_UNKNOWN_TAG:
+    startSound(SND_UNKNOWN_TAG_OBJ);
+    break;
+  }
+
+  if (force) {
+    while (isPlayingSound) {
+      updateSound();
+      delay(1);
+    }
   }
 }
 
@@ -315,11 +372,18 @@ void ensureWiFi() {
   if (isConnected && !wasConnected) {
     log("WiFi Connected");
     playSound(SND_CONNECTED);
-    digitalWrite(LED_PIN, LOW); // Ensure LED is OFF on connection
+    digitalWrite(LED_PIN, LOW);
     esp_wifi_set_ps(WIFI_PS_MIN_MODEM);
-  } else if (!isConnected && wasConnected) {
+    hasPlayedNoWifiSound = false;
+  } 
+  else if (!isConnected && wasConnected) {
     log("Lost connection");
-    playSound(SND_NO_WIFI);
+
+    if (!hasPlayedNoWifiSound) {
+      playSound(SND_NO_WIFI);
+      hasPlayedNoWifiSound = true;
+    }
+
     esp_wifi_set_ps(WIFI_PS_NONE);
   }
 
@@ -329,10 +393,46 @@ void ensureWiFi() {
     return;
 
   unsigned long now = millis();
-  if (now - lastWiFiAttempt > WIFI_RETRY_INTERVAL) {
+  if (now - lastWiFiAttempt > wifi_retry_interval_ms) {
     lastWiFiAttempt = now;
     autoConnect();
   }
+}
+
+void finishSuccessfulWiFiConnection() {
+  if (isConfigMode) {
+    isConfigMode = false;
+    WiFi.softAPdisconnect(true);
+    WiFi.mode(WIFI_STA);
+    log("Switching to STA mode");
+  }
+}
+
+String getWiFiPasswordFromTag(String tag) {
+  String pass = getTagField(tag, "PASS");
+  if (pass == "") {
+    pass = getTagField(tag, "PASSWORD");
+  }
+  return pass;
+}
+
+bool connectToWiFi(String ssid, String pass) {
+  ssid.trim();
+  pass.trim();
+
+  if (ssid == "") {
+    log("WIFI_CONNECT tag missing SSID");
+    playSound(SND_UNKNOWN_TAG);
+    return false;
+  }
+
+  if (tryConnect(ssid, pass)) {
+    return true;
+  }
+
+  WiFi.disconnect();
+  playSound(SND_NO_WIFI);
+  return false;
 }
 
 void handleRoot() {
@@ -382,11 +482,11 @@ void handleRoot() {
       "text-transform: uppercase; letter-spacing: 0.2em; }"
       "</style></head><body>"
       "<h1>Padel Push</h1>"
-      "<h2>Setup Portal</h2>"
+      "<h2>Setup Hub Device</h2>"
       "<div class='card' style='padding: 0; overflow: hidden; border-radius: 12px;'>"
       "<div id='net-list'>";
 
-  WiFi.disconnect(); // Ensure we are not trying to connect while scanning
+  WiFi.disconnect();
   int n = WiFi.scanNetworks();
   if (n == 0) {
     html += "<p style='padding: 20px;'>No networks found.</p>";
@@ -448,7 +548,6 @@ void handleConnect() {
   ssid.trim();
   pass.trim();
 
-  // Show connecting page
   String html =
       "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>"
       "<style>body { background: #0a0e17; color: #fff; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }"
@@ -459,9 +558,8 @@ void handleConnect() {
       "</div></body></html>";
   server.send(200, "text/html", html);
 
-  delay(1000); // small delay before attempting connection
-  if (tryConnect(ssid, pass)) {
-    // Show success page
+  delay(1000);
+  if (connectToWiFi(ssid, pass)) {
     html =
         "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>"
         "<style>body { background: #0a0e17; color: #f7ff00; font-family: sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; margin: 0; text-align: center; }"
@@ -476,17 +574,12 @@ void handleConnect() {
     server.send(200, "text/html", html);
     
     log("Connected! Closing AP mode in 2 seconds...");
-    delay(2000); // Let user see the success message and hear the sound
+    delay(2000);
 
-    // Close AP mode and switch to STA
-    isConfigMode = false;
-    WiFi.softAPdisconnect(true);
-    log("Switching to STA mode");
-  } else {
-    // Failed to connect
+    finishSuccessfulWiFiConnection();
+  } 
+  else {
     log("Failed to connect, showing failure page");
-    WiFi.disconnect(); // Explicitly disconnect to clean up
-    playSound(SND_NO_WIFI);
 
     html =
         "<!DOCTYPE html><html><head><meta name='viewport' content='width=device-width, initial-scale=1.0'>"
@@ -515,7 +608,6 @@ void startCaptivePortal() {
   isConfigMode = true;
   WiFi.mode(WIFI_AP);
 
-  // Set static AP IP
   if (!WiFi.softAPConfig(apIP, gateway, subnet)) {
     log("Failed to configure AP IP!");
   }
@@ -530,14 +622,11 @@ void startCaptivePortal() {
   log(apName);
   WiFi.softAP(apName, "", 1, false, 4);
 
-  // Start DNS server to redirect all requests to ESP
   dnsServer.start(53, "*", WiFi.softAPIP());
 
-  // Setup web server routes
   server.on("/", HTTP_GET, handleRoot);
   server.on("/connect", HTTP_POST, handleConnect);
 
-  // Standard captive portal routes - Redirect to root to trigger portal popup
   server.on("/generate_204", handleRedirect);
   server.on("/hotspot-detect.html", handleRedirect);
   server.on("/connecttest.txt", handleRedirect);
@@ -555,14 +644,12 @@ void startCaptivePortal() {
   playSound(SND_NO_WIFI);
 }
 
-void sendEvent(EVENT event) {
+bool postEventPayload(EVENT event, const char *payload) {
   if (WiFi.status() != WL_CONNECTED)
-    return;
-
-  char payload[PAYLOAD_BUFFER_SIZE];
-  snprintf(payload, sizeof(payload),
-           "{\"deviceId\":\"%s\",\"eventType\":\"%s\"}", DEVICEID.c_str(),
-           event);
+  {
+    playSound(SND_NO_WIFI);
+    return false;
+  }
 
   // retries once
   for (int i = 0; i < 2; i++) {
@@ -574,9 +661,14 @@ void sendEvent(EVENT event) {
     https.begin(client, POSTEVENT_ENDPOINT);
     https.addHeader("Content-Type", "application/json");
 
-    log("\nEvent: \n" + String(event) + "\nEndpoint: \n" + POSTEVENT_ENDPOINT +
+    if (i == 0) {
+      log("\nEvent: \n" + String(event) + "\nEndpoint: \n" + POSTEVENT_ENDPOINT +
         "\nPayload: \n" + payload);
-
+    }
+    else {
+      log("\nRetrying...");
+    }
+    
     int code = https.POST(payload);
 
     log("\nResponse Code: \n" + String(code) + "\nResponse Message: \n" +
@@ -585,32 +677,49 @@ void sendEvent(EVENT event) {
     https.end();
 
     if (code >= 200 && code < 300)
-      return;
+      return true;
 
     delay(POST_RETRY_INTERVAL);
   }
 
   playSound(SND_HTTP_POST_FAILED);
+  return false;
+}
+
+bool sendEvent(EVENT event) {
+  char payload[PAYLOAD_BUFFER_SIZE];
+  snprintf(payload, sizeof(payload),
+           "{\"deviceId\":\"%s\",\"eventType\":\"%s\"}",
+           DEVICEID.c_str(), event);
+
+  return postEventPayload(event, payload);
 }
 
 // ==========================
 // ACTIONS
 // ==========================
 
-void addPoint() {
+void handleBootButton() {
+  if (digitalRead(BOOT_BUTTON_PIN) == LOW) {
+    log("Factory reset triggered via BOOT button");
+    factoryReset();
+  }
+}
+
+void addPoint(EVENT event) {
   playSound(SND_ADD_POINT);
-  sendEvent(currentTeam == 'A' ? EVENT_POINT_TEAM_A : EVENT_POINT_TEAM_B);
+  sendEvent(event);
 }
 
-void switchTeam() {
-  currentTeam = (currentTeam == 'A') ? 'B' : 'A';
-  saveCurrentTeam(currentTeam);
+void undo() {
+  playSound(SND_UNDO, true);
+  sendEvent(EVENT_UNDO);
 }
-
-void undo() { sendEvent(EVENT_UNDO); }
 
 void factoryReset() {
   log("FACTORY RESET INITIATED");
+
+  playSound(SND_FACTORY_RESET_DEVICE, true);
 
   preferences.begin("wifi-store", false);
   preferences.clear();
@@ -621,12 +730,51 @@ void factoryReset() {
   preferences.end();
 
   wifiCount = 0;
-  currentTeam = 'A';
 
   WiFi.disconnect(true, true);
   log("Storage cleared. Restarting...");
   delay(1000);
   ESP.restart();
+}
+
+void resetScore() {  
+  playSound(SND_RESET_SCORE, true);
+  sendEvent(EVENT_RESET);
+}
+
+void spectateCourt(String courtId) {
+  if (courtId == "") {
+    playSound(SND_REGISTER_DEVICE_IMPOSSIBLE);
+    return;
+  }
+
+  playSound(SND_REGISTER_DEVICE);
+  char payload[PAYLOAD_BUFFER_SIZE];
+  snprintf(payload, sizeof(payload),
+           "{\"deviceId\":\"%s\",\"eventType\":\"%s\",\"courtId\":\"%s\"}",
+           DEVICEID.c_str(), EVENT_SPECTATE_COURT, courtId.c_str());
+  postEventPayload(
+    EVENT_SPECTATE_COURT, payload
+  );
+}
+
+void registerDeviceToCourt(String registeringDeviceId) {  
+  log("DEVICEID: " + registeringDeviceId);
+  if (registeringDeviceId == "") {
+    playSound(SND_REGISTER_DEVICE_IMPOSSIBLE);
+    return;
+  }
+
+  playSound(SND_REGISTER_DEVICE, true);
+
+  char payload[PAYLOAD_BUFFER_SIZE];
+  snprintf(payload, sizeof(payload),
+           "{\"deviceId\":\"%s\",\"eventType\":\"%s\",\"registeringDeviceId\":\"%s\"}",
+           DEVICEID.c_str(), EVENT_REGISTER_DEVICE_TO_COURT,
+           registeringDeviceId.c_str());
+  postEventPayload(
+    EVENT_REGISTER_DEVICE_TO_COURT, payload
+  );
 }
 
 void log(String s) {
@@ -635,12 +783,227 @@ void log(String s) {
 }
 
 // ==========================
+// NFC
+// ==========================
+
+bool detectTag(String* uidStr) {
+  uint8_t uid[7];
+  uint8_t uidLength;
+
+  if (!nfc.readPassiveTargetID(PN532_MIFARE_ISO14443A, uid, &uidLength)) {
+    return false;
+  }
+
+  *uidStr = "";
+  for (int i = 0; i < uidLength; i++) {
+    if (uid[i] < 0x10) *uidStr += "0";
+    *uidStr += String(uid[i], HEX);
+  }
+
+  uidStr->toUpperCase();
+  return true;
+}
+
+String readTagData() {
+  uint8_t data[64];
+  int index = 0;
+
+  for (uint8_t page = 4; page < 20; page++) {
+    uint8_t pageData[4];
+
+    if (nfc.ntag2xx_ReadPage(page, pageData)) {
+      for (int i = 0; i < 4; i++) {
+        data[index++] = pageData[i];
+      }
+    }
+  }
+
+  String result = "";
+
+  for (int i = 0; i < index; i++) {
+    if (i > 0 && data[i] == 0x54) { // 'T'
+      uint8_t payloadLength = data[i - 1];
+      uint8_t langLength = data[i + 1];
+
+      for (int j = i + 2 + langLength; j < i + 1 + payloadLength; j++) {
+        result += (char)data[j];
+      }
+      break;
+    }
+  }
+
+  return result;
+}
+
+String getTagField(String tag, String fieldName) {
+  fieldName.toUpperCase();
+
+  int start = 0;
+  while (start < tag.length()) {
+    int end = tag.indexOf(';', start);
+    if (end == -1) {
+      end = tag.length();
+    }
+
+    String segment = tag.substring(start, end);
+    int separator = segment.indexOf(':');
+    if (separator != -1) {
+      String key = segment.substring(0, separator);
+      key.trim();
+      key.toUpperCase();
+
+      if (key == fieldName) {
+        String value = segment.substring(separator + 1);
+        value.trim();
+        return value;
+      }
+    }
+
+    start = end + 1;
+  }
+
+  return "";
+}
+
+void handleWiFiConnectTag(String tag) {
+  playSound(SND_WIFI_CONNECT_TRIGGERED, true);
+
+  String ssid = getTagField(tag, "SSID");
+  String pass = getWiFiPasswordFromTag(tag);
+
+  log("WIFI_CONNECT SSID: " + ssid);
+  
+  if (connectToWiFi(ssid, pass)) {
+    finishSuccessfulWiFiConnection();
+  }
+}
+
+void handleNfcTag(String tag) {
+  String eventType = getTagField(tag, "EVENT");
+  if (eventType == "") {
+    eventType = tag;
+  }
+  eventType.toUpperCase();
+
+  log("EVENT TYPE: " + String(eventType));
+
+  if (eventType == EVENT_POINT_TEAM_A) {
+    addPoint(EVENT_POINT_TEAM_A);
+  }
+  else if (eventType == EVENT_POINT_TEAM_B) {
+    addPoint(EVENT_POINT_TEAM_B);
+  }
+  else if (eventType == EVENT_UNDO) {
+    undo();
+  }
+  else if (eventType == EVENT_RESET) {
+    resetScore();
+  }
+  else if (eventType == EVENT_SPECTATE_COURT) {
+    String courtId = getTagField(tag, "COURTID");
+    spectateCourt(courtId);
+  }
+  else if (eventType == EVENT_REGISTER_DEVICE_TO_COURT) {
+    String deviceId = getTagField(tag, "DEVICEID");
+    registerDeviceToCourt(deviceId);
+  }
+  else if (eventType == EVENT_FACTORY_RESET_DEVICE) {
+    factoryReset();
+  }
+  else if (eventType == EVENT_WIFI_CONNECT) {
+    handleWiFiConnectTag(tag);
+  }
+  else {
+    playSound(SND_UNKNOWN_TAG);
+  }
+}
+
+void doNfcStuff() {
+  if (isNfcAvailable && (millis() - lastNfcCheck > NFC_INTERVAL_MS)) {
+    lastNfcCheck = millis();
+
+    String uid = "";
+
+    if (detectTag(&uid)) {
+      noTagCount = 0; // reset miss counter
+
+      unsigned long now = millis();
+
+      if (uid == lastTriggeredUid && (now - lastTriggerTime < TAG_COOLDOWN)) {
+        return;
+      }
+
+      lastTriggeredUid = uid;
+      lastTriggerTime = now;
+
+      log("\nTag detected: " + uid);
+
+      String tag = readTagData();
+
+      log("NFC Tag Text Contents: " + tag);
+
+      if (tag != "") {
+        handleNfcTag(tag);
+      }
+      else {
+        playSound(SND_UNKNOWN_TAG);
+      }
+
+    } else {
+      noTagCount++;
+
+      if (noTagCount >= NO_TAG_THRESHOLD) {
+        lastUid = "";
+      }
+    }
+  }
+}
+
+void doConfigModeThings() {
+  dnsServer.processNextRequest();
+    server.handleClient();
+
+    // Flash LED in config mode
+    unsigned long now = millis();
+    if (now - lastStatusFlash > 500) {
+      lastStatusFlash = now;
+      statusLedState = !statusLedState;
+      digitalWrite(LED_PIN, statusLedState);
+    }
+}
+
+// ==========================
 // SETUP
 // ==========================
 
+void initNfc() {
+  log("\nPN532 NFC Reader (SPI) starting...");
+
+  SPI.begin(PN532_SCK, PN532_MISO, PN532_MOSI);
+
+  nfc.begin();
+
+  if (!nfc.getFirmwareVersion()) {
+    //TODO - fail flamboyantly
+    log("❌ Didn't find PN532");
+    while (1);
+  }
+
+  nfc.SAMConfig();
+
+  nfc.setPassiveActivationRetries(0x00);
+
+  isNfcAvailable = true;
+
+  log("✅ PN532 ready");
+  log("Waiting for NFC tag...");
+}
+
 void setup() {
-  if (DEBUG)
+  if (DEBUG) {
     Serial.begin(115200);
+    delay(1000);
+  }
 
   log("\n\nSetting Up...");
 
@@ -648,20 +1011,20 @@ void setup() {
     setCpuFrequencyMhz(80);
 
   pinMode(LED_PIN, OUTPUT);
-  pinMode(BUTTON_PIN, INPUT_PULLUP);
   pinMode(BUZZER_PIN, OUTPUT);
+  pinMode(BOOT_BUTTON_PIN, INPUT_PULLUP);
+    
+  initNfc();
 
   loadWiFiList();
-  loadCurrentTeam();
 
-  // DEVICEID = WiFi.macAddress();
   uint8_t baseMac[6];
   esp_read_mac(baseMac, ESP_MAC_BASE);
   char baseMacChr[18] = {0};
   sprintf(baseMacChr, "%02X:%02X:%02X:%02X:%02X:%02X", baseMac[0], baseMac[1],
           baseMac[2], baseMac[3], baseMac[4], baseMac[5]);
   DEVICEID = String(baseMacChr);
-  DEVICEID.replace(":", ""); // Clean device ID
+  DEVICEID.replace(":", "");
 
   log("Device ID: " + DEVICEID);
 
@@ -678,108 +1041,14 @@ void setup() {
 
 void loop() {
   if (isConfigMode) {
-    dnsServer.processNextRequest();
-    server.handleClient();
-
-    // Flash LED in config mode
-    unsigned long now = millis();
-    if (now - lastStatusFlash > 500) {
-      lastStatusFlash = now;
-      statusLedState = !statusLedState;
-      digitalWrite(LED_PIN, statusLedState);
-    }
+    doConfigModeThings();
   } else {
     ensureWiFi();
   }
 
   updateSound();
 
-  static bool lastReading = HIGH;
-  static bool stableState = HIGH;
-  static unsigned long lastDebounceTime = 0;
+  handleBootButton();
 
-  static unsigned long pressStartTime = 0;
-  static unsigned long lastPressTime = 0;
-
-  static bool isPressing = false;
-  static bool soundUndoPlayed = false;
-  static bool soundSwitchPlayed = false;
-  static bool soundResetPlayed = false;
-
-  bool reading = digitalRead(BUTTON_PIN);
-  unsigned long now = millis();
-
-  if (reading != lastReading) {
-    lastDebounceTime = now;
-  }
-
-  if ((now - lastDebounceTime) > DEBOUNCE_TIME) {
-
-    if (reading != stableState) {
-      stableState = reading;
-
-      // PRESS
-      if (stableState == LOW) {
-
-        if (now - lastPressTime < PRESS_COOLDOWN)
-          return;
-
-        if (WiFi.status() != WL_CONNECTED) {
-          playSound(SND_NO_WIFI);
-          return;
-        }
-
-        isPressing = true;
-        pressStartTime = now;
-        soundUndoPlayed = false;
-        soundSwitchPlayed = false;
-        soundResetPlayed = false;
-
-        digitalWrite(LED_PIN, HIGH);
-      }
-
-      // RELEASE
-      else {
-        digitalWrite(LED_PIN, LOW);
-
-        if (!isPressing)
-          return;
-
-        isPressing = false;
-        lastPressTime = now;
-
-        unsigned long duration = now - pressStartTime;
-
-        if (duration >= FACTORY_RESET_HOLD_THRESHOLD) {
-          factoryReset();
-        } else if (duration >= SWITCH_TEAM_HOLD_THRESHOLD) {
-          switchTeam();
-        } else if (duration >= UNDO_HOLD_THRESHOLD) {
-          undo();
-        } else {
-          addPoint();
-        }
-      }
-    }
-  }
-
-  lastReading = reading;
-
-  // HOLD FEEDBACK
-  if (isPressing && stableState == LOW) {
-    unsigned long duration = now - pressStartTime;
-
-    if (duration >= FACTORY_RESET_HOLD_THRESHOLD && !soundResetPlayed) {
-      playSound(SND_FACTORY_RESET);
-      soundResetPlayed = true;
-    } else if (duration >= SWITCH_TEAM_HOLD_THRESHOLD && !soundSwitchPlayed &&
-               !soundResetPlayed) {
-      playSound(SND_SWITCH_TEAM);
-      soundSwitchPlayed = true;
-    } else if (duration >= UNDO_HOLD_THRESHOLD && !soundUndoPlayed &&
-               !soundSwitchPlayed && !soundResetPlayed) {
-      playSound(SND_UNDO);
-      soundUndoPlayed = true;
-    }
-  }
+  doNfcStuff();
 }
